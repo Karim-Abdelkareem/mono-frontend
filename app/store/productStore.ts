@@ -154,31 +154,37 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
     .filter((entry): entry is ProductColorImage => Boolean(entry));
 
   const rawVariants = Array.isArray(source.variants) ? source.variants : [];
-  let variants: ProductVariant[] = rawVariants
-    .map((variantEntry) => {
+  let variants: ProductVariant[] = rawVariants.reduce<ProductVariant[]>(
+    (acc, variantEntry) => {
       const variant = variantEntry as Record<string, unknown>;
       const size = typeof variant.size === "string" ? variant.size : "";
-      if (!isProductSize(size)) return null;
+      if (!isProductSize(size)) return acc;
 
       if (Array.isArray(variant.colors)) {
-        const colors = (variant.colors as unknown[])
-          .map((colorEntry) => {
+        const colors = (variant.colors as unknown[]).reduce<ProductVariantColor[]>(
+          (colorAcc, colorEntry) => {
             const colorData = colorEntry as Record<string, unknown>;
             const color = typeof colorData.color === "string" ? colorData.color : "";
-            if (!isProductColor(color)) return null;
-            return {
+            if (!isProductColor(color)) return colorAcc;
+            colorAcc.push({
               color,
               quantity: Number(colorData.quantity ?? 0),
               sku: typeof colorData.sku === "string" ? colorData.sku : undefined,
-            };
-          })
-          .filter((item): item is ProductVariantColor => Boolean(item));
-        return { size, colors };
+            });
+            return colorAcc;
+          },
+          [],
+        );
+        acc.push({ size, colors });
+        return acc;
       }
 
       const legacyColor = typeof variant.color === "string" ? variant.color : "";
-      if (!isProductColor(legacyColor)) return { size, colors: [] };
-      return {
+      if (!isProductColor(legacyColor)) {
+        acc.push({ size, colors: [] });
+        return acc;
+      }
+      acc.push({
         size,
         colors: [
           {
@@ -187,9 +193,11 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
             sku: typeof variant.sku === "string" ? variant.sku : undefined,
           },
         ],
-      };
-    })
-    .filter((item): item is ProductVariant => Boolean(item));
+      });
+      return acc;
+    },
+    [],
+  );
 
   if (!colorImages.length) {
     const map = new Map<ProductColor, string[]>();
