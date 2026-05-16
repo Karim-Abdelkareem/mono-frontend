@@ -2,6 +2,8 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
+  /** Skip refresh-token retry (e.g. initial auth probe). */
+  skipAuthRefresh?: boolean;
 };
 
 const baseURL = process.env.NEXT_PUBLIC_API_URL;
@@ -37,7 +39,13 @@ api.interceptors.response.use(
     const isAuthRoute =
       requestUrl.includes("/users/login") || requestUrl.includes("/users/refresh-token");
 
-    if (!originalRequest || status !== 401 || originalRequest._retry || isAuthRoute) {
+    if (
+      !originalRequest ||
+      status !== 401 ||
+      originalRequest._retry ||
+      originalRequest.skipAuthRefresh ||
+      isAuthRoute
+    ) {
       return Promise.reject(error);
     }
 

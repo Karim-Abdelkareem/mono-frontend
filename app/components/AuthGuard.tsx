@@ -11,6 +11,8 @@ type AuthGuardProps = {
 
 const PUBLIC_ROUTES = new Set(["/users/login"]);
 
+const AUTH_CHECK_TIMEOUT_MS = 10_000;
+
 async function checkAuth(): Promise<boolean> {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL;
   if (!baseUrl) return false;
@@ -18,6 +20,8 @@ async function checkAuth(): Promise<boolean> {
   try {
     await api.get("/users/me", {
       baseURL: baseUrl,
+      timeout: AUTH_CHECK_TIMEOUT_MS,
+      skipAuthRefresh: true,
     });
     return true;
   } catch {
@@ -44,12 +48,16 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     }
   }, [isAuthenticated, isLoading, isPublicRoute, router]);
 
-  if (!isPublicRoute && (isLoading || isAuthenticated === false)) {
+  if (!isPublicRoute && isLoading) {
     return (
       <div className="flex min-h-screen w-full items-center justify-center bg-gray-50">
         <p className="text-sm text-gray-500">Checking authentication...</p>
       </div>
     );
+  }
+
+  if (!isPublicRoute && isAuthenticated === false) {
+    return null;
   }
 
   return <>{children}</>;

@@ -15,8 +15,8 @@ import {
   Tags,
   Star,
   User,
-  Settings,
   type LucideIcon,
+  BadgePercent,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -90,12 +90,22 @@ const sidebarItems: SidebarItem[] = [
     icon: Star,
     href: "/reviews",
   },
-  { label: "User Profile", icon: User, href: "/users/profile" },
   {
-    label: "Settings",
-    icon: Settings,
-    href: "/settings",
+    label: "Coupons",
+    icon: BadgePercent,
+    href: "/coupons",
+    children: [
+      {
+        label: "All Coupons",
+        href: "/coupons",
+      },
+      {
+        label: "Add Coupon",
+        href: "/coupons/add-coupon",
+      },
+    ],
   },
+  { label: "User Profile", icon: User, href: "/users/profile" },
 ];
 export default function Sidebar() {
   const router = useRouter();
@@ -105,6 +115,8 @@ export default function Sidebar() {
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
     "/orders": false,
     "/products": false,
+    "/category": false,
+    "/coupons": false,
   });
 
   const toggleItem = (href: string) => {
