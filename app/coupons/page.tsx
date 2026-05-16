@@ -3,38 +3,39 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { ArchiveRestore, Eye, Plus, Trash2 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Eye, Plus, Power, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import TablePagination from "@/app/components/Pagination";
 import {
   Coupon,
-  CouponStatus,
-  archiveCoupon,
+  couponStateBadgeClass,
+  deleteCoupon,
+  formatCouponValue,
+  formatEgp,
+  formatUsage,
   getApiErrorMessage,
+  getCouponDisplayState,
   getCoupons,
-  unarchiveCoupon,
+  isCouponRestricted,
+  toggleCoupon,
 } from "@/app/lib/couponService";
 
-type ActiveFilter = "all" | "true" | "false";
+type FilterTab = "all" | "active" | "inactive" | "expired" | "public" | "restricted";
 
 function formatDate(value?: string) {
-  if (!value) return "-";
+  if (!value) return "—";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleDateString("en-GB");
-}
-
-function money(value: number | null) {
-  if (value === null) return "No minimum";
-  return `$${Number(value || 0).toFixed(2)}`;
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function CouponTableSkeleton() {
   return (
     <>
-      {Array.from({ length: 5 }).map((_, index) => (
+      {Array.from({ length: 6 }).map((_, index) => (
         <tr key={`coupon-skeleton-${index}`} className="animate-pulse">
-          {Array.from({ length: 9 }).map((__, colIndex) => (
+          {Array.from({ length: 8 }).map((__, colIndex) => (
             <td key={colIndex} className="px-4 py-3">
               <div className="h-4 rounded bg-gray-200" />
             </td>
@@ -45,42 +46,48 @@ function CouponTableSkeleton() {
   );
 }
 
+const FILTER_TABS: { value: FilterTab; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "expired", label: "Expired" },
+  { value: "public", label: "Public" },
+  { value: "restricted", label: "Restricted" },
+];
+
+function matchesFilter(coupon: Coupon, filter: FilterTab) {
+  if (filter === "all") return true;
+  const state = getCouponDisplayState(coupon);
+  if (filter === "active") return state === "active";
+  if (filter === "inactive") return state === "inactive";
+  if (filter === "expired") return state === "expired";
+  if (filter === "public") return !isCouponRestricted(coupon);
+  if (filter === "restricted") return isCouponRestricted(coupon);
+  return true;
+}
+
 export default function CouponsPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
 
-  const [archivingId, setArchivingId] = useState<string | null>(null);
-  const [couponToArchive, setCouponToArchive] = useState<Coupon | null>(null);
-  const [couponToUnarchive, setCouponToUnarchive] = useState<Coupon | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [couponToDelete, setCouponToDelete] = useState<Coupon | null>(null);
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
-  const [statusFilter, setStatusFilter] = useState<"all" | CouponStatus>(
-    searchParams.get("status") === "archived" ? "archived" : "all",
-  );
-  const [isActiveFilter, setIsActiveFilter] = useState<ActiveFilter>(
-    searchParams.get("isActive") === "true"
-      ? "true"
-      : searchParams.get("isActive") === "false"
-        ? "false"
-        : "all",
+  const [filter, setFilter] = useState<FilterTab>(
+    (searchParams.get("filter") as FilterTab) || "all",
   );
   const [page, setPage] = useState(Math.max(1, Number(searchParams.get("page") ?? 1)));
-  const [limit, setLimit] = useState(Math.max(1, Number(searchParams.get("limit") ?? 10)));
+  const [limit, setLimit] = useState(Math.max(1, Number(searchParams.get("limit") ?? 20)));
+
   const updateUrl = useCallback(
-    (next: {
-      search: string;
-      status: "all" | CouponStatus;
-      isActive: ActiveFilter;
-      page: number;
-      limit: number;
-    }) => {
+    (next: { search: string; filter: FilterTab; page: number; limit: number }) => {
       const params = new URLSearchParams();
       if (next.search.trim()) params.set("search", next.search.trim());
-      if (next.status !== "all") params.set("status", next.status);
-      if (next.isActive !== "all") params.set("isActive", next.isActive);
+      if (next.filter !== "all") params.set("filter", next.filter);
       if (next.page > 1) params.set("page", String(next.page));
-      if (next.limit !== 10) params.set("limit", String(next.limit));
-
+      if (next.limit !== 20) params.set("limit", String(next.limit));
       const query = params.toString();
       router.replace(query ? `${pathname}?${query}` : pathname);
     },
@@ -88,145 +95,139 @@ export default function CouponsPage() {
   );
 
   useEffect(() => {
-    updateUrl({
-      search,
-      status: statusFilter,
-      isActive: isActiveFilter,
-      page,
-      limit,
-    });
-  }, [isActiveFilter, limit, page, search, statusFilter, updateUrl]);
+    updateUrl({ search, filter, page, limit });
+  }, [filter, limit, page, search, updateUrl]);
 
-  const {
-    data: couponsResult,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery({
-    queryKey: ["coupons", search, statusFilter, isActiveFilter, page, limit],
-    queryFn: () =>
-      getCoupons({
-        search: search.trim() || undefined,
-        status: statusFilter === "all" ? undefined : statusFilter,
-        isActive: isActiveFilter === "all" ? undefined : isActiveFilter === "true",
-        page,
-        limit,
-      }),
+  const { data: allCoupons = [], isLoading, error } = useQuery({
+    queryKey: ["coupons"],
+    queryFn: getCoupons,
   });
 
-  const coupons = useMemo(() => couponsResult?.coupons ?? [], [couponsResult?.coupons]);
-  const total = couponsResult?.pagination.total ?? 0;
-  const totalPages = Math.max(1, couponsResult?.pagination.totalPages ?? 1);
-  const hasData = useMemo(() => coupons.length > 0, [coupons]);
+  const filteredCoupons = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return allCoupons
+      .filter((coupon) => matchesFilter(coupon, filter))
+      .filter((coupon) => !query || coupon.code.toLowerCase().includes(query))
+      .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+  }, [allCoupons, filter, search]);
+
+  const total = filteredCoupons.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const currentPage = Math.min(page, totalPages);
+  const coupons = useMemo(() => {
+    const start = (currentPage - 1) * limit;
+    return filteredCoupons.slice(start, start + limit);
+  }, [filteredCoupons, currentPage, limit]);
+
   const errorMessage = error ? getApiErrorMessage(error, "Failed to fetch coupons.") : "";
 
-  const handleArchive = async () => {
-    if (!couponToArchive || couponToArchive.status === "archived") return;
-    setArchivingId(couponToArchive._id);
+  const handleToggle = async (coupon: Coupon) => {
+    setActionId(coupon._id);
     try {
-      await archiveCoupon(couponToArchive._id);
-      toast.success(`Coupon ${couponToArchive.code} archived.`);
-      await refetch();
-      setCouponToArchive(null);
+      await toggleCoupon(coupon._id, !coupon.isActive);
+      await queryClient.invalidateQueries({ queryKey: ["coupons"] });
+      toast.success(coupon.isActive ? "Coupon deactivated." : "Coupon activated.");
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Failed to archive coupon."));
+      toast.error(getApiErrorMessage(err, "Failed to toggle coupon."));
     } finally {
-      setArchivingId(null);
+      setActionId(null);
     }
   };
 
-  const handleUnarchive = async () => {
-    if (!couponToUnarchive || couponToUnarchive.status !== "archived") return;
-    setArchivingId(couponToUnarchive._id);
+  const handleDelete = async () => {
+    if (!couponToDelete) return;
+    setActionId(couponToDelete._id);
     try {
-      await unarchiveCoupon(couponToUnarchive._id);
-      toast.success(`Coupon ${couponToUnarchive.code} unarchived.`);
-      await refetch();
-      setCouponToUnarchive(null);
+      await deleteCoupon(couponToDelete._id);
+      await queryClient.invalidateQueries({ queryKey: ["coupons"] });
+      toast.success(`Coupon ${couponToDelete.code} deleted.`);
+      setCouponToDelete(null);
     } catch (err) {
-      toast.error(getApiErrorMessage(err, "Failed to unarchive coupon."));
+      toast.error(getApiErrorMessage(err, "Failed to delete coupon."));
     } finally {
-      setArchivingId(null);
+      setActionId(null);
     }
   };
 
   return (
-    <div className="mx-auto w-full px-4 py-6 md:px-8">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="w-full px-4 py-6 md:px-8">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Coupons</h1>
-          <p className="text-sm text-gray-500">Manage coupon availability and limits.</p>
+          <p className="text-sm text-gray-500">
+            Create and manage percent or fixed discounts (EGP).
+          </p>
         </div>
         <Link
           href="/coupons/add-coupon"
-          className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-black"
+          className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-black"
         >
           <Plus className="size-4" />
           Add coupon
         </Link>
       </div>
 
-      <div className="mb-4 grid gap-3 rounded-xl border border-gray-200 bg-white p-4 md:grid-cols-5">
-        <input
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-            setPage(1);
-          }}
-          placeholder="Search by coupon code..."
-          className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-900"
-        />
-        <select
-          value={statusFilter}
-          onChange={(event) => {
-            setStatusFilter(event.target.value as "all" | CouponStatus);
-            setPage(1);
-          }}
-          className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-900"
-        >
-          <option value="all">All status</option>
-          <option value="active">Active</option>
-          <option value="archived">Archived</option>
-        </select>
-        <select
-          value={isActiveFilter}
-          onChange={(event) => {
-            setIsActiveFilter(event.target.value as ActiveFilter);
-            setPage(1);
-          }}
-          className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-900"
-        >
-          <option value="all">All active state</option>
-          <option value="true">Active only</option>
-          <option value="false">Inactive only</option>
-        </select>
-        <select
-          value={String(limit)}
-          onChange={(event) => {
-            setLimit(Number(event.target.value));
-            setPage(1);
-          }}
-          className="rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-900"
-        >
-          <option value="10">10 / page</option>
-          <option value="20">20 / page</option>
-          <option value="50">50 / page</option>
-        </select>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {FILTER_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => {
+              setFilter(tab.value);
+              setPage(1);
+            }}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+              filter === tab.value
+                ? "bg-gray-900 text-white"
+                : "bg-white text-gray-700 ring-1 ring-gray-200 hover:bg-gray-50"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4">
+        <input
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
+          placeholder="Search by code…"
+          className="w-full max-w-sm rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-900 sm:flex-1"
+        />
+        <div className="flex items-center gap-3 text-sm text-gray-600">
+          <span>
+            {isLoading ? "Loading…" : `${total} coupon${total === 1 ? "" : "s"}`}
+          </span>
+          <select
+            value={String(limit)}
+            onChange={(e) => {
+              setLimit(Number(e.target.value));
+              setPage(1);
+            }}
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
+          >
+            <option value="10">10 / page</option>
+            <option value="20">20 / page</option>
+            <option value="50">50 / page</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
             <tr>
               <th className="px-4 py-3 font-medium">Code</th>
-              <th className="px-4 py-3 font-medium">Discount</th>
+              <th className="px-4 py-3 font-medium">Type / Value</th>
               <th className="px-4 py-3 font-medium">Usage</th>
-              <th className="px-4 py-3 font-medium">Min Order</th>
-              <th className="px-4 py-3 font-medium">Max/User</th>
-              <th className="px-4 py-3 font-medium">Active</th>
+              <th className="px-4 py-3 font-medium">Min order</th>
+              <th className="px-4 py-3 font-medium">Expires</th>
               <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Created</th>
-              <th className="px-4 py-3 font-medium text-right">Action</th>
+              <th className="px-4 py-3 font-medium">Scope</th>
+              <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -234,174 +235,124 @@ export default function CouponsPage() {
               <CouponTableSkeleton />
             ) : errorMessage ? (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-red-600">
+                <td colSpan={8} className="px-4 py-10 text-center text-red-600">
                   {errorMessage}
                 </td>
               </tr>
-            ) : !hasData ? (
+            ) : coupons.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center">
+                <td colSpan={8} className="px-4 py-12 text-center">
                   <p className="text-sm text-gray-700">No coupons found.</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Try changing filters or create a new coupon.
-                  </p>
+                  <p className="mt-1 text-xs text-gray-500">Try another filter or create one.</p>
                 </td>
               </tr>
             ) : (
-              coupons.map((coupon) => (
-                <tr key={coupon._id} className="hover:bg-gray-50/70">
-                  <td className="px-4 py-3 font-medium text-gray-900">{coupon.code || "-"}</td>
-                  <td className="px-4 py-3 text-gray-700">{coupon.discount}%</td>
-                  <td className="px-4 py-3 text-gray-700">
-                    {coupon.uses} / {coupon.maxUses}
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{money(coupon.minOrderAmount)}</td>
-                  <td className="px-4 py-3 text-gray-700">{coupon.maxUsesPerUser}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                        coupon.isActive
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-700"
-                      }`}
-                    >
-                      {coupon.isActive ? "Yes" : "No"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                        coupon.status === "archived"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-blue-100 text-blue-700"
-                      }`}
-                    >
-                      {coupon.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{formatDate(coupon.createdAt)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex items-center gap-2">
-                      <Link
-                        href={`/coupons/edit-coupon?id=${coupon._id}`}
-                        className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              coupons.map((coupon) => {
+                const state = getCouponDisplayState(coupon);
+                return (
+                  <tr key={coupon._id} className="hover:bg-gray-50/70">
+                    <td className="px-4 py-3">
+                      <span className="font-mono font-semibold text-gray-900">{coupon.code}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">
+                      <span className="capitalize">{coupon.type}</span>
+                      <span className="mx-1 text-gray-300">·</span>
+                      {formatCouponValue(coupon)}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{formatUsage(coupon)}</td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {coupon.minOrderAmount > 0 ? formatEgp(coupon.minOrderAmount) : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{formatDate(coupon.expiresAt)}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize ${couponStateBadgeClass(state)}`}
                       >
-                        <Eye className="size-3.5" />
-                        View/Edit
-                      </Link>
-                      {coupon.status === "archived" ? (
-                        <button
-                          type="button"
-                          onClick={() => setCouponToUnarchive(coupon)}
-                          disabled={archivingId === coupon._id}
-                          className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-2.5 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <ArchiveRestore className="size-3.5" />
-                          {archivingId === coupon._id ? "Unarchiving..." : "Unarchive"}
-                        </button>
+                        {state}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {isCouponRestricted(coupon) ? (
+                        <span className="inline-flex rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">
+                          Restricted
+                        </span>
                       ) : (
+                        <span className="inline-flex rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                          Public
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex items-center gap-1.5">
+                        <Link
+                          href={`/coupons/edit-coupon?id=${coupon._id}`}
+                          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          <Eye className="size-3.5" />
+                          Edit
+                        </Link>
                         <button
                           type="button"
-                          onClick={() => setCouponToArchive(coupon)}
-                          disabled={archivingId === coupon._id}
-                          className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={() => handleToggle(coupon)}
+                          disabled={actionId === coupon._id}
+                          title={coupon.isActive ? "Deactivate" : "Activate"}
+                          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          <Power className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCouponToDelete(coupon)}
+                          disabled={actionId === coupon._id}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
                         >
                           <Trash2 className="size-3.5" />
-                          {archivingId === coupon._id ? "Archiving..." : "Archive"}
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {!isLoading && !errorMessage && hasData ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm">
-          <p className="text-gray-600">
-            Showing {(page - 1) * limit + 1}-{Math.min(page * limit, total)} of {total}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-              disabled={page <= 1}
-              className="rounded-md border border-gray-200 px-3 py-1.5 text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Previous
-            </button>
-            <span className="text-gray-600">
-              Page {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-              disabled={page >= totalPages}
-              className="rounded-md border border-gray-200 px-3 py-1.5 text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Next
-            </button>
-          </div>
-        </div>
+      {!isLoading && !errorMessage && filteredCoupons.length > 0 ? (
+        <TablePagination
+          className="mt-4"
+          page={currentPage}
+          totalPages={totalPages}
+          total={total}
+          limit={limit}
+          onPageChange={setPage}
+        />
       ) : null}
 
-      {couponToArchive ? (
+      {couponToDelete ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-xl">
-            <h2 className="text-lg font-semibold text-gray-900">Archive coupon</h2>
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900">Delete coupon</h2>
             <p className="mt-2 text-sm text-gray-600">
-              Archive this coupon? It will no longer be usable.
+              Permanently delete <span className="font-mono font-medium">{couponToDelete.code}</span>
+              ? Existing orders keep their discount reference; this cannot be undone.
             </p>
-            <p className="mt-2 text-sm font-medium text-gray-900">{couponToArchive.code}</p>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setCouponToArchive(null)}
-                disabled={Boolean(archivingId)}
-                className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setCouponToDelete(null)}
+                disabled={Boolean(actionId)}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-sm hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleArchive}
-                disabled={Boolean(archivingId)}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleDelete}
+                disabled={Boolean(actionId)}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
-                {archivingId ? "Archiving..." : "Archive coupon"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {couponToUnarchive ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-5 shadow-xl">
-            <h2 className="text-lg font-semibold text-gray-900">Unarchive coupon</h2>
-            <p className="mt-2 text-sm text-gray-600">
-              Unarchive this coupon? It will become active again.
-            </p>
-            <p className="mt-2 text-sm font-medium text-gray-900">{couponToUnarchive.code}</p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setCouponToUnarchive(null)}
-                disabled={Boolean(archivingId)}
-                className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleUnarchive}
-                disabled={Boolean(archivingId)}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {archivingId ? "Unarchiving..." : "Unarchive coupon"}
+                {actionId ? "Deleting…" : "Delete"}
               </button>
             </div>
           </div>

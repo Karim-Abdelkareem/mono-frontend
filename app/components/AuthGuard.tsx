@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect } from "react";
-import { api } from "../lib/api";
+import axios from "axios";
+import { api, refreshAccessToken } from "../lib/api";
 
 type AuthGuardProps = {
   children: ReactNode;
@@ -17,12 +18,25 @@ async function checkAuth(): Promise<boolean> {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL;
   if (!baseUrl) return false;
 
-  try {
-    await api.get("/users/me", {
+  const getMe = () =>
+    api.get("/users/me", {
       baseURL: baseUrl,
       timeout: AUTH_CHECK_TIMEOUT_MS,
       skipAuthRefresh: true,
     });
+
+  try {
+    await getMe();
+    return true;
+  } catch (error) {
+    if (!axios.isAxiosError(error) || error.response?.status !== 401) {
+      return false;
+    }
+  }
+
+  try {
+    await refreshAccessToken();
+    await getMe();
     return true;
   } catch {
     return false;

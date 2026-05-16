@@ -3,65 +3,56 @@
 import axios from "axios";
 import { api } from "./api";
 
-export type CouponStatus = "active" | "archived";
+export type CouponType = "percent" | "fixed";
 
 export type Coupon = {
   _id: string;
   code: string;
-  discount: number;
-  maxUses: number;
-  uses: number;
-  minOrderAmount: number | null;
-  maxUsesPerUser: number;
+  type: CouponType;
+  value: number;
+  minOrderAmount: number;
+  maxUsages: number;
+  usedCount: number;
   isActive: boolean;
-  status: CouponStatus;
-  archivedAt: string | null;
-  archivedReason: string | null;
+  expiresAt: string;
+  createdByOrder?: string;
+  createdForUser?: string | null;
+  createdForEmail?: string | null;
+  usedInOrders?: string[];
   createdAt?: string;
   updatedAt?: string;
 };
 
-export type GetCouponsParams = {
-  page?: number;
-  limit?: number;
-  search?: string;
-  status?: CouponStatus;
-  isActive?: boolean;
-};
-
-export type CouponPagination = {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-};
-
-export type GetCouponsResult = {
-  coupons: Coupon[];
-  pagination: CouponPagination;
-};
-
 export type CreateCouponPayload = {
-  discount: number;
-  maxUses: number;
-  minOrderAmount: number | null;
-  maxUsesPerUser: number;
-  isActive: boolean;
+  code: string;
+  type: CouponType;
+  value: number;
+  minOrderAmount?: number;
+  maxUsages?: number;
+  expiryDays?: number;
+  createdForEmail?: string | null;
 };
 
-export type UpdateCouponPayload = Partial<CreateCouponPayload>;
+export type UpdateCouponPayload = {
+  coupon: Partial<
+    Pick<
+      Coupon,
+      | "code"
+      | "type"
+      | "value"
+      | "minOrderAmount"
+      | "maxUsages"
+      | "expiresAt"
+      | "isActive"
+      | "createdForEmail"
+      | "createdForUser"
+    >
+  >;
+};
 
 type CouponResponse = {
   data?: unknown;
   coupon?: unknown;
-  coupons?: unknown[];
-  pagination?: Partial<CouponPagination>;
-  meta?: {
-    page?: number;
-    limit?: number;
-    total?: number;
-    totalPages?: number;
-  };
 };
 
 function getBaseUrl() {
@@ -72,24 +63,43 @@ function getBaseUrl() {
   return baseUrl;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
 function normalizeCoupon(raw: unknown): Coupon | null {
-  if (!raw || typeof raw !== "object") return null;
-  const source = raw as Record<string, unknown>;
-  const status: CouponStatus = source.status === "archived" ? "archived" : "active";
+  const source = asRecord(raw);
+  if (!source || typeof source._id !== "string") return null;
+
+  const usedInOrders = Array.isArray(source.usedInOrders)
+    ? source.usedInOrders.filter((id): id is string => typeof id === "string")
+    : undefined;
 
   return {
-    _id: typeof source._id === "string" ? source._id : "",
+    _id: source._id,
     code: typeof source.code === "string" ? source.code : "",
-    discount: Number(source.discount ?? 0),
-    maxUses: Number(source.maxUses ?? 0),
-    uses: Number(source.uses ?? 0),
-    minOrderAmount:
-      source.minOrderAmount === null ? null : Number(source.minOrderAmount ?? 0),
-    maxUsesPerUser: Number(source.maxUsesPerUser ?? 0),
-    isActive: Boolean(source.isActive),
-    status,
-    archivedAt: typeof source.archivedAt === "string" ? source.archivedAt : null,
-    archivedReason: typeof source.archivedReason === "string" ? source.archivedReason : null,
+    type: source.type === "fixed" ? "fixed" : "percent",
+    value: Number(source.value ?? 0),
+    minOrderAmount: Number(source.minOrderAmount ?? 0),
+    maxUsages: Number(source.maxUsages ?? 1),
+    usedCount: Number(source.usedCount ?? 0),
+    isActive: Boolean(source.isActive ?? true),
+    expiresAt: typeof source.expiresAt === "string" ? source.expiresAt : "",
+    createdByOrder:
+      typeof source.createdByOrder === "string" ? source.createdByOrder : undefined,
+    createdForUser:
+      source.createdForUser === null
+        ? null
+        : typeof source.createdForUser === "string"
+          ? source.createdForUser
+          : undefined,
+    createdForEmail:
+      source.createdForEmail === null
+        ? null
+        : typeof source.createdForEmail === "string"
+          ? source.createdForEmail
+          : undefined,
+    usedInOrders,
     createdAt: typeof source.createdAt === "string" ? source.createdAt : undefined,
     updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : undefined,
   };
@@ -106,40 +116,67 @@ export function getApiErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-export async function getCoupons(params: GetCouponsParams = {}): Promise<GetCouponsResult> {
+export function formatEgp(value: number) {
+  return `${Number(value || 0).toFixed(2)} EGP`;
+}
+
+export function formatCouponValue(coupon: Pick<Coupon, "type" | "value">) {
+  return coupon.type === "percent" ? `${coupon.value}%` : formatEgp(coupon.value);
+}
+
+export function formatUsage(coupon: Pick<Coupon, "usedCount" | "maxUsages">) {
+  const max = coupon.maxUsages === 0 ? "∞" : String(coupon.maxUsages);
+  return `${coupon.usedCount} / ${max}`;
+}
+
+export function isCouponExpired(coupon: Pick<Coupon, "expiresAt">) {
+  if (!coupon.expiresAt) return false;
+  return new Date(coupon.expiresAt).getTime() < Date.now();
+}
+
+export function isCouponMaxedOut(coupon: Pick<Coupon, "usedCount" | "maxUsages">) {
+  return coupon.maxUsages > 0 && coupon.usedCount >= coupon.maxUsages;
+}
+
+export function isCouponRestricted(coupon: Pick<Coupon, "createdForEmail" | "createdForUser">) {
+  return Boolean(coupon.createdForEmail || coupon.createdForUser);
+}
+
+export type CouponDisplayState = "active" | "inactive" | "expired" | "maxed";
+
+export function getCouponDisplayState(
+  coupon: Pick<Coupon, "isActive" | "expiresAt" | "usedCount" | "maxUsages">,
+): CouponDisplayState {
+  if (isCouponExpired(coupon)) return "expired";
+  if (isCouponMaxedOut(coupon)) return "maxed";
+  if (!coupon.isActive) return "inactive";
+  return "active";
+}
+
+export function couponStateBadgeClass(state: CouponDisplayState) {
+  switch (state) {
+    case "active":
+      return "bg-green-100 text-green-700";
+    case "inactive":
+      return "bg-gray-100 text-gray-700";
+    case "expired":
+      return "bg-red-100 text-red-700";
+    case "maxed":
+      return "bg-orange-100 text-orange-700";
+    default:
+      return "bg-gray-100 text-gray-700";
+  }
+}
+
+export async function getCoupons(): Promise<Coupon[]> {
   const baseURL = getBaseUrl();
-  const query: Record<string, string | number | boolean> = {};
-
-  if (params.page) query.page = params.page;
-  if (params.limit) query.limit = params.limit;
-  if (params.search?.trim()) query.search = params.search.trim();
-  if (params.status) query.status = params.status;
-  if (typeof params.isActive === "boolean") query.isActive = params.isActive;
-
-  const { data } = await api.get<CouponResponse>("/coupons", { baseURL, params: query });
-  const rawCoupons =
-    (data?.data as { coupons?: unknown[] } | undefined)?.coupons ??
+  const { data } = await api.get<CouponResponse>("/coupons", { baseURL });
+  const raw =
     (Array.isArray(data?.data) ? data.data : undefined) ??
-    data?.coupons ??
+    (data?.data as { coupons?: unknown[] } | undefined)?.coupons ??
     [];
 
-  const coupons = rawCoupons
-    .map((item) => normalizeCoupon(item))
-    .filter((item): item is Coupon => Boolean(item));
-
-  const paginationSource = data?.pagination ?? data?.meta ?? {};
-  const page = Number(paginationSource.page ?? params.page ?? 1);
-  const resolvedLimit = paginationSource.limit ?? params.limit ?? coupons.length;
-  const limit = Number(resolvedLimit || 10);
-  const total = Number(paginationSource.total ?? coupons.length);
-  const totalPages = Number(
-    paginationSource.totalPages ?? Math.max(1, Math.ceil(total / Math.max(limit, 1))),
-  );
-
-  return {
-    coupons,
-    pagination: { page, limit, total, totalPages },
-  };
+  return raw.map((item) => normalizeCoupon(item)).filter((item): item is Coupon => Boolean(item));
 }
 
 export async function getCouponById(id: string): Promise<Coupon | null> {
@@ -150,7 +187,12 @@ export async function getCouponById(id: string): Promise<Coupon | null> {
 
 export async function createCoupon(payload: CreateCouponPayload): Promise<Coupon> {
   const baseURL = getBaseUrl();
-  const { data } = await api.post<CouponResponse>("/coupons", payload, { baseURL });
+  const body = {
+    ...payload,
+    code: payload.code.trim().toUpperCase(),
+    createdForEmail: payload.createdForEmail?.trim() || null,
+  };
+  const { data } = await api.post<CouponResponse>("/coupons", body, { baseURL });
   const coupon = normalizeCoupon(data?.data ?? data?.coupon ?? null);
   if (!coupon) {
     throw new Error("Coupon created but response is invalid.");
@@ -158,22 +200,38 @@ export async function createCoupon(payload: CreateCouponPayload): Promise<Coupon
   return coupon;
 }
 
-export async function updateCoupon(id: string, payload: UpdateCouponPayload): Promise<Coupon> {
+export async function updateCoupon(
+  id: string,
+  coupon: UpdateCouponPayload["coupon"],
+): Promise<Coupon> {
   const baseURL = getBaseUrl();
-  const { data } = await api.put<CouponResponse>(`/coupons/${id}`, payload, { baseURL });
+  const { data } = await api.patch<CouponResponse>(
+    `/coupons/${id}`,
+    { coupon },
+    { baseURL },
+  );
+  const updated = normalizeCoupon(data?.data ?? data?.coupon ?? null);
+  if (!updated) {
+    throw new Error("Coupon updated but response is invalid.");
+  }
+  return updated;
+}
+
+export async function toggleCoupon(id: string, isActive: boolean): Promise<Coupon> {
+  const baseURL = getBaseUrl();
+  const { data } = await api.patch<CouponResponse>(
+    `/coupons/${id}/toggle`,
+    { isActive },
+    { baseURL },
+  );
   const coupon = normalizeCoupon(data?.data ?? data?.coupon ?? null);
   if (!coupon) {
-    throw new Error("Coupon updated but response is invalid.");
+    throw new Error("Coupon toggled but response is invalid.");
   }
   return coupon;
 }
 
-export async function archiveCoupon(id: string): Promise<void> {
+export async function deleteCoupon(id: string): Promise<void> {
   const baseURL = getBaseUrl();
   await api.delete(`/coupons/${id}`, { baseURL });
-}
-
-export async function unarchiveCoupon(id: string): Promise<void> {
-  const baseURL = getBaseUrl();
-  await api.patch(`/coupons/${id}/unarchive`, {}, { baseURL });
 }

@@ -43,7 +43,7 @@ export default function EditCouponPage() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8">
+      <div className="w-full px-4 py-6 md:px-8">
         <p className="text-sm text-gray-500">Loading coupon...</p>
       </div>
     );

@@ -13,10 +13,10 @@ import {
   ShoppingCart,
   Package,
   Tags,
-  Star,
   User,
   type LucideIcon,
   BadgePercent,
+  MapPin,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -86,11 +86,6 @@ const sidebarItems: SidebarItem[] = [
     ],
   },
   {
-    label: "Reviews",
-    icon: Star,
-    href: "/reviews",
-  },
-  {
     label: "Coupons",
     icon: BadgePercent,
     href: "/coupons",
@@ -102,6 +97,17 @@ const sidebarItems: SidebarItem[] = [
       {
         label: "Add Coupon",
         href: "/coupons/add-coupon",
+      },
+    ],
+  },
+  {
+    label: "Shipping",
+    icon: MapPin,
+    href: "/shipping/governments",
+    children: [
+      {
+        label: "Governments",
+        href: "/shipping/governments",
       },
     ],
   },
@@ -117,6 +123,7 @@ export default function Sidebar() {
     "/products": false,
     "/category": false,
     "/coupons": false,
+    "/shipping/governments": false,
   });
 
   const toggleItem = (href: string) => {
