@@ -12,7 +12,15 @@ import {
 } from "react";
 import axios from "axios";
 import Image from "next/image";
-import { Check, ChevronDown, Loader2, Plus, Search, Trash2, Upload } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Loader2,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useCategoryStore } from "@/app/store/categoryStore";
@@ -52,6 +60,8 @@ const colorSwatches: Record<ProductColor, string> = {
   Gray: "#6b7280",
   Black: "#111827",
   White: "#ffffff",
+  "Baby Blue": "#56a3d9",
+  Baige: "#F5F5DC",
 };
 
 type ProductFormProps = {
@@ -76,7 +86,11 @@ function toUploadItems(urls: string[]): UploadItem[] {
   }));
 }
 
-export default function ProductForm({ mode, productId, initialProduct }: ProductFormProps) {
+export default function ProductForm({
+  mode,
+  productId,
+  initialProduct,
+}: ProductFormProps) {
   const router = useRouter();
   const categories = useCategoryStore((state) => state.categories);
   const fetchCategories = useCategoryStore((state) => state.fetchCategories);
@@ -135,9 +149,13 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
         images: toUploadItems(entry.images),
       })),
     );
-    setMainImage(normalized.mainImage ? toUploadItems([normalized.mainImage]) : []);
+    setMainImage(
+      normalized.mainImage ? toUploadItems([normalized.mainImage]) : [],
+    );
     setSecondaryImage(
-      normalized.secondaryImage ? toUploadItems([normalized.secondaryImage]) : [],
+      normalized.secondaryImage
+        ? toUploadItems([normalized.secondaryImage])
+        : [],
     );
   }, [initialProduct]);
 
@@ -163,7 +181,9 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
     const query = categorySearch.trim().toLowerCase();
     if (!query) return categories;
     return categories.filter((item) =>
-      `${item.name?.en ?? ""} ${item.name?.ar ?? ""}`.toLowerCase().includes(query),
+      `${item.name?.en ?? ""} ${item.name?.ar ?? ""}`
+        .toLowerCase()
+        .includes(query),
     );
   }, [categories, categorySearch]);
 
@@ -251,7 +271,12 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
           setter((prev) =>
             prev.map((entry) =>
               entry.id === item.id
-                ? { ...entry, uploadedUrl, previewUrl: uploadedUrl, isUploading: false }
+                ? {
+                    ...entry,
+                    uploadedUrl,
+                    previewUrl: uploadedUrl,
+                    isUploading: false,
+                  }
                 : entry,
             ),
           );
@@ -289,7 +314,9 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
     }));
     setColorImages((prev) =>
       prev.map((entry) =>
-        entry.color === color ? { ...entry, images: [...entry.images, ...newItems] } : entry,
+        entry.color === color
+          ? { ...entry, images: [...entry.images, ...newItems] }
+          : entry,
       ),
     );
 
@@ -304,7 +331,12 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
                     ...entry,
                     images: entry.images.map((img) =>
                       img.id === item.id
-                        ? { ...img, uploadedUrl, previewUrl: uploadedUrl, isUploading: false }
+                        ? {
+                            ...img,
+                            uploadedUrl,
+                            previewUrl: uploadedUrl,
+                            isUploading: false,
+                          }
                         : img,
                     ),
                   }
@@ -315,7 +347,10 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
           setColorImages((prev) =>
             prev.map((entry) =>
               entry.color === color
-                ? { ...entry, images: entry.images.filter((img) => img.id !== item.id) }
+                ? {
+                    ...entry,
+                    images: entry.images.filter((img) => img.id !== item.id),
+                  }
                 : entry,
             ),
           );
@@ -337,7 +372,10 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
     setColorImages((prev) =>
       prev.map((entry) =>
         entry.color === color
-          ? { ...entry, images: entry.images.filter((img) => img.id !== imageId) }
+          ? {
+              ...entry,
+              images: entry.images.filter((img) => img.id !== imageId),
+            }
           : entry,
       ),
     );
@@ -354,14 +392,19 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
     setColorImages((prev) => [...prev, { color: nextColor, images: [] }]);
   };
 
-  const updateColorGalleryColor = (oldColor: ProductColor, newColor: ProductColor) => {
+  const updateColorGalleryColor = (
+    oldColor: ProductColor,
+    newColor: ProductColor,
+  ) => {
     if (oldColor === newColor) return;
     if (colorImages.some((entry) => entry.color === newColor)) {
       toast.error("This color gallery already exists.");
       return;
     }
     setColorImages((prev) =>
-      prev.map((entry) => (entry.color === oldColor ? { ...entry, color: newColor } : entry)),
+      prev.map((entry) =>
+        entry.color === oldColor ? { ...entry, color: newColor } : entry,
+      ),
     );
     setVariants((prev) =>
       prev.map((variant) => ({
@@ -436,7 +479,10 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
     setVariants((prev) =>
       prev.map((entry) =>
         entry.size === size
-          ? { ...entry, colors: [...entry.colors, { color: availableColor, quantity: 0 }] }
+          ? {
+              ...entry,
+              colors: [...entry.colors, { color: availableColor, quantity: 0 }],
+            }
           : entry,
       ),
     );
@@ -458,14 +504,20 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
         return {
           ...entry,
           colors: entry.colors.map((colorEntry) =>
-            colorEntry.color === oldColor ? { ...colorEntry, color: newColor } : colorEntry,
+            colorEntry.color === oldColor
+              ? { ...colorEntry, color: newColor }
+              : colorEntry,
           ),
         };
       }),
     );
   };
 
-  const updateVariantQuantity = (size: ProductSize, color: ProductColor, quantity: number) => {
+  const updateVariantQuantity = (
+    size: ProductSize,
+    color: ProductColor,
+    quantity: number,
+  ) => {
     setVariants((prev) =>
       prev.map((entry) =>
         entry.size === size
@@ -491,14 +543,20 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
               colors:
                 entry.colors.length === 1
                   ? entry.colors
-                  : entry.colors.filter((colorEntry) => colorEntry.color !== color),
+                  : entry.colors.filter(
+                      (colorEntry) => colorEntry.color !== color,
+                    ),
             }
           : entry,
       ),
     );
   };
 
-  const requestConfirm = (title: string, description: string, onConfirm: () => void) => {
+  const requestConfirm = (
+    title: string,
+    description: string,
+    onConfirm: () => void,
+  ) => {
     setConfirmDialog({
       open: true,
       title,
@@ -508,7 +566,12 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
   };
 
   const closeConfirmDialog = () => {
-    setConfirmDialog({ open: false, title: "", description: "", onConfirm: null });
+    setConfirmDialog({
+      open: false,
+      title: "",
+      description: "",
+      onConfirm: null,
+    });
   };
 
   const confirmDeleteAction = () => {
@@ -613,7 +676,11 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
               onClick={() => setIsCategoryMenuOpen((prev) => !prev)}
               className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800"
             >
-              <span className={selectedCategoryLabel ? "text-gray-900" : "text-gray-400"}>
+              <span
+                className={
+                  selectedCategoryLabel ? "text-gray-900" : "text-gray-400"
+                }
+              >
                 {selectedCategoryLabel || "Select category"}
               </span>
               <ChevronDown className="size-4 text-gray-500" />
@@ -625,7 +692,9 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
                     <Search className="size-4 text-gray-400" />
                     <input
                       value={categorySearch}
-                      onChange={(event) => setCategorySearch(event.target.value)}
+                      onChange={(event) =>
+                        setCategorySearch(event.target.value)
+                      }
                       className="w-full border-none bg-transparent text-sm text-gray-800 outline-none"
                       placeholder="Search category..."
                     />
@@ -658,7 +727,9 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
         </section>
 
         <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Pricing</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Pricing
+          </h2>
           <div className="grid gap-3 md:grid-cols-3">
             <input
               type="number"
@@ -679,7 +750,8 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
               placeholder="Discount %"
             />
             <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-              Final price: <span className="font-semibold">{finalPrice.toFixed(2)}</span>
+              Final price:{" "}
+              <span className="font-semibold">{finalPrice.toFixed(2)}</span>
             </div>
           </div>
         </section>
@@ -690,7 +762,12 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
           </h2>
           <div className="grid gap-4 md:grid-cols-2">
             {[
-              { key: "main" as const, title: "Main image", value: mainImage, setter: setMainImage },
+              {
+                key: "main" as const,
+                title: "Main image",
+                value: mainImage,
+                setter: setMainImage,
+              },
               {
                 key: "secondary" as const,
                 title: "Secondary image",
@@ -698,8 +775,13 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
                 setter: setSecondaryImage,
               },
             ].map((entry) => (
-              <div key={entry.key} className="rounded-lg border border-gray-200 p-3">
-                <p className="mb-2 text-sm font-medium text-gray-700">{entry.title}</p>
+              <div
+                key={entry.key}
+                className="rounded-lg border border-gray-200 p-3"
+              >
+                <p className="mb-2 text-sm font-medium text-gray-700">
+                  {entry.title}
+                </p>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700">
                   <Upload className="size-4" />
                   Upload {entry.title}
@@ -707,7 +789,9 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    onChange={(event) => handleSingleImageUpload(event, entry.key)}
+                    onChange={(event) =>
+                      handleSingleImageUpload(event, entry.key)
+                    }
                   />
                 </label>
                 {entry.value[0] && (
@@ -760,12 +844,18 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
           </div>
 
           {colorImages.map((entry) => (
-            <div key={entry.color} className="rounded-lg border border-gray-200 p-3">
+            <div
+              key={entry.color}
+              className="rounded-lg border border-gray-200 p-3"
+            >
               <div className="mb-2 flex items-center gap-2">
                 <select
                   value={entry.color}
                   onChange={(event) =>
-                    updateColorGalleryColor(entry.color, event.target.value as ProductColor)
+                    updateColorGalleryColor(
+                      entry.color,
+                      event.target.value as ProductColor,
+                    )
                   }
                   className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
                 >
@@ -798,14 +888,25 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
                   accept="image/*"
                   multiple
                   className="hidden"
-                  onChange={(event) => handleColorImagesUpload(entry.color, event)}
+                  onChange={(event) =>
+                    handleColorImagesUpload(entry.color, event)
+                  }
                 />
               </label>
 
               <div className="mt-3 grid grid-cols-3 gap-2 md:grid-cols-5">
                 {entry.images.map((image) => (
-                  <div key={image.id} className="relative aspect-square overflow-hidden rounded-lg border border-gray-200">
-                    <Image src={image.previewUrl} alt={entry.color} fill className="object-cover" unoptimized />
+                  <div
+                    key={image.id}
+                    className="relative aspect-square overflow-hidden rounded-lg border border-gray-200"
+                  >
+                    <Image
+                      src={image.previewUrl}
+                      alt={entry.color}
+                      fill
+                      className="object-cover"
+                      unoptimized
+                    />
                     {image.isUploading && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/35">
                         <Loader2 className="size-5 animate-spin text-white" />
@@ -847,13 +948,19 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
           </div>
 
           {variants.map((variant) => (
-            <div key={variant.size} className="rounded-lg border border-gray-200 p-3">
+            <div
+              key={variant.size}
+              className="rounded-lg border border-gray-200 p-3"
+            >
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <select
                     value={variant.size}
                     onChange={(event) =>
-                      updateVariantSize(variant.size, event.target.value as ProductSize)
+                      updateVariantSize(
+                        variant.size,
+                        event.target.value as ProductSize,
+                      )
                     }
                     className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
                   >
@@ -889,7 +996,10 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
 
               <div className="space-y-2">
                 {variant.colors.map((entry) => (
-                  <div key={`${variant.size}-${entry.color}`} className="flex flex-wrap items-center gap-2">
+                  <div
+                    key={`${variant.size}-${entry.color}`}
+                    className="flex flex-wrap items-center gap-2"
+                  >
                     <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-2 py-1">
                       <span
                         className="size-3 rounded-full border border-black/10"
@@ -953,7 +1063,9 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
             type="button"
             onClick={() => setIsActive((prev) => !prev)}
             className={`rounded-full px-3 py-1 text-xs font-medium ${
-              isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+              isActive
+                ? "bg-green-100 text-green-700"
+                : "bg-gray-100 text-gray-600"
             }`}
           >
             {isActive ? "Active" : "Inactive"}
@@ -978,8 +1090,12 @@ export default function ProductForm({ mode, productId, initialProduct }: Product
       {confirmDialog.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-            <h3 className="text-base font-semibold text-gray-900">{confirmDialog.title}</h3>
-            <p className="mt-2 text-sm text-gray-600">{confirmDialog.description}</p>
+            <h3 className="text-base font-semibold text-gray-900">
+              {confirmDialog.title}
+            </h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {confirmDialog.description}
+            </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
                 type="button"

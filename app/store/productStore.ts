@@ -16,6 +16,8 @@ export const PRODUCT_COLORS = [
   "Gray",
   "Black",
   "White",
+  "Baby Blue",
+  "Baige",
 ] as const;
 
 export type ProductSize = (typeof PRODUCT_SIZES)[number];
