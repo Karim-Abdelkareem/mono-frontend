@@ -62,6 +62,9 @@ const colorSwatches: Record<ProductColor, string> = {
   White: "#ffffff",
   "Baby Blue": "#56a3d9",
   Baige: "#F5F5DC",
+  Turquoise: "#40E0D0",
+  Burgundy: "#800020",
+  Petroleum: "#003153",
 };
 
 type ProductFormProps = {
