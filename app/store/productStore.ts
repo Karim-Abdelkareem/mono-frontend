@@ -18,7 +18,6 @@ export const PRODUCT_COLORS = [
   "White",
   "Baby Blue",
   "Baige",
-  "Turquoise",
   "Burgundy",
   "Petroleum",
 ] as const;
