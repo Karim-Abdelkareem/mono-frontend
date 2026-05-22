@@ -28,7 +28,6 @@ import {
   PRODUCT_COLORS,
   PRODUCT_SIZES,
   ProductColor,
-  ProductColorImage,
   ProductEntity,
   ProductSize,
   useProductStore,
@@ -99,23 +98,45 @@ export default function ProductForm({
   const createProduct = useProductStore((state) => state.createProduct);
   const updateProduct = useProductStore((state) => state.updateProduct);
 
-  const [titleEn, setTitleEn] = useState("");
-  const [titleAr, setTitleAr] = useState("");
-  const [descriptionEn, setDescriptionEn] = useState("");
-  const [descriptionAr, setDescriptionAr] = useState("");
-  const [category, setCategory] = useState("");
-  const [basePriceInput, setBasePriceInput] = useState("");
-  const [discountInput, setDiscountInput] = useState("0");
-  const [isActive, setIsActive] = useState(true);
-  const [variants, setVariants] = useState<ProductFormValues["variants"]>([
-    { size: "M", colors: [{ color: "Black", quantity: 0 }] },
-  ]);
+  const editSeed =
+    mode === "edit" && initialProduct
+      ? normalizeFormValuesFromProduct(initialProduct)
+      : null;
+
+  const [titleEn, setTitleEn] = useState(editSeed?.title.en ?? "");
+  const [titleAr, setTitleAr] = useState(editSeed?.title.ar ?? "");
+  const [descriptionEn, setDescriptionEn] = useState(editSeed?.description.en ?? "");
+  const [descriptionAr, setDescriptionAr] = useState(editSeed?.description.ar ?? "");
+  const [category, setCategory] = useState(editSeed?.category ?? "");
+  const [basePriceInput, setBasePriceInput] = useState(
+    editSeed ? String(editSeed.basePrice) : "",
+  );
+  const [discountInput, setDiscountInput] = useState(
+    editSeed ? String(editSeed.discount) : "0",
+  );
+  const [isActive, setIsActive] = useState(editSeed?.isActive ?? true);
+  const [variants, setVariants] = useState<ProductFormValues["variants"]>(
+    editSeed?.variants ?? [{ size: "M", colors: [{ color: "Black", quantity: 0 }] }],
+  );
   const [colorImages, setColorImages] = useState<
     Array<{ color: ProductColor; images: UploadItem[] }>
-  >([{ color: "Black", images: [] }]);
-  const [mainImage, setMainImage] = useState<UploadItem[]>([]);
-  const [secondaryImage, setSecondaryImage] = useState<UploadItem[]>([]);
+  >(
+    editSeed
+      ? editSeed.colorImages.map((entry) => ({
+          color: entry.color,
+          images: toUploadItems(entry.images),
+        }))
+      : [{ color: "Black", images: [] }],
+  );
+  const [mainImage, setMainImage] = useState<UploadItem[]>(
+    editSeed?.mainImage ? toUploadItems([editSeed.mainImage]) : [],
+  );
+  const [secondaryImage, setSecondaryImage] = useState<UploadItem[]>(
+    editSeed?.secondaryImage ? toUploadItems([editSeed.secondaryImage]) : [],
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const baselineValues = editSeed;
+  const isFormReady = mode === "create" || editSeed !== null;
   const [isCategoryMenuOpen, setIsCategoryMenuOpen] = useState(false);
   const [categorySearch, setCategorySearch] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({
@@ -132,34 +153,6 @@ export default function ProductForm({
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
-
-  useEffect(() => {
-    if (!initialProduct) return;
-    const normalized = normalizeFormValuesFromProduct(initialProduct);
-    setTitleEn(normalized.title.en);
-    setTitleAr(normalized.title.ar);
-    setDescriptionEn(normalized.description.en);
-    setDescriptionAr(normalized.description.ar);
-    setCategory(normalized.category);
-    setBasePriceInput(String(normalized.basePrice));
-    setDiscountInput(String(normalized.discount));
-    setIsActive(normalized.isActive);
-    setVariants(normalized.variants);
-    setColorImages(
-      normalized.colorImages.map((entry) => ({
-        color: entry.color,
-        images: toUploadItems(entry.images),
-      })),
-    );
-    setMainImage(
-      normalized.mainImage ? toUploadItems([normalized.mainImage]) : [],
-    );
-    setSecondaryImage(
-      normalized.secondaryImage
-        ? toUploadItems([normalized.secondaryImage])
-        : [],
-    );
-  }, [initialProduct]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -230,11 +223,6 @@ export default function ProductForm({
       colorImages,
       variants,
     ],
-  );
-
-  const initialValues = useMemo(
-    () => normalizeFormValuesFromProduct(initialProduct ?? null),
-    [initialProduct],
   );
 
   const uploadToCloudinary = async (file: File) => {
@@ -585,6 +573,10 @@ export default function ProductForm({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (mode === "edit" && !isFormReady) {
+      toast.error("Product data is still loading. Please wait.");
+      return;
+    }
     if (anyImageUploading) {
       toast.error("Please wait until all image uploads finish.");
       return;
@@ -602,8 +594,8 @@ export default function ProductForm({
         const payload = buildCreateProductPayload(currentValues);
         await createProduct(payload);
         toast.success("Product created successfully.");
-      } else if (mode === "edit" && productId) {
-        const payload = buildUpdateProductPayload(initialValues, currentValues);
+      } else if (mode === "edit" && productId && baselineValues) {
+        const payload = buildUpdateProductPayload(baselineValues, currentValues);
         if (Object.keys(payload).length === 0) {
           toast.info("No changes to update.");
           setIsSubmitting(false);
@@ -1076,16 +1068,18 @@ export default function ProductForm({
 
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !isFormReady}
           className="rounded-lg bg-gray-900 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50"
         >
           {isSubmitting
             ? mode === "create"
               ? "Creating..."
               : "Updating..."
-            : mode === "create"
-              ? "Create product"
-              : "Update product"}
+            : !isFormReady
+              ? "Loading..."
+              : mode === "create"
+                ? "Create product"
+                : "Update product"}
         </button>
       </form>
 

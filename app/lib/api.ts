@@ -14,6 +14,19 @@ export const api = axios.create({
 });
 
 let refreshPromise: Promise<void> | null = null;
+let onSessionExpired: (() => void) | null = null;
+
+/**
+ * Register a handler invoked when refresh-token fails (session truly expired).
+ * Used by AuthGuard to clear cache and redirect to login.
+ */
+export function setOnSessionExpired(handler: (() => void) | null) {
+  onSessionExpired = handler;
+}
+
+function notifySessionExpired() {
+  onSessionExpired?.();
+}
 
 /**
  * Uses `refreshToken` cookie; backend sets a new `token` access cookie on success.
@@ -35,8 +48,21 @@ export async function refreshAccessToken(): Promise<void> {
   );
 }
 
+function getRequestPath(url: string) {
+  try {
+    return new URL(url, baseURL ?? "http://localhost").pathname;
+  } catch {
+    return url;
+  }
+}
+
 function isAuthEndpoint(url: string) {
-  return url.includes("/users/login") || url.includes("/users/refresh-token");
+  const path = getRequestPath(url);
+  return (
+    path.includes("/users/login") ||
+    path.includes("/users/logout") ||
+    path.includes("/users/refresh-token")
+  );
 }
 
 api.interceptors.response.use(
@@ -68,6 +94,7 @@ api.interceptors.response.use(
       await refreshPromise;
       return api(originalRequest);
     } catch (refreshError) {
+      notifySessionExpired();
       return Promise.reject(refreshError);
     }
   },

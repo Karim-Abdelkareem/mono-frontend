@@ -49,5 +49,12 @@ export default function EditProductPage() {
   }
 
   if (!product || !productId) return null;
-  return <ProductForm mode="edit" productId={productId} initialProduct={product} />;
+  return (
+    <ProductForm
+      key={productId}
+      mode="edit"
+      productId={productId}
+      initialProduct={product}
+    />
+  );
 }

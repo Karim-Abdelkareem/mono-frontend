@@ -1,10 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect } from "react";
-import axios from "axios";
-import { api, refreshAccessToken } from "../lib/api";
+import { api, setOnSessionExpired } from "../lib/api";
 
 type AuthGuardProps = {
   children: ReactNode;
@@ -18,25 +17,11 @@ async function checkAuth(): Promise<boolean> {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL;
   if (!baseUrl) return false;
 
-  const getMe = () =>
-    api.get("/users/me", {
+  try {
+    await api.get("/users/me", {
       baseURL: baseUrl,
       timeout: AUTH_CHECK_TIMEOUT_MS,
-      skipAuthRefresh: true,
     });
-
-  try {
-    await getMe();
-    return true;
-  } catch (error) {
-    if (!axios.isAxiosError(error) || error.response?.status !== 401) {
-      return false;
-    }
-  }
-
-  try {
-    await refreshAccessToken();
-    await getMe();
     return true;
   } catch {
     return false;
@@ -46,6 +31,7 @@ async function checkAuth(): Promise<boolean> {
 export default function AuthGuard({ children }: AuthGuardProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const isPublicRoute = PUBLIC_ROUTES.has(pathname);
 
   const { data: isAuthenticated, isLoading } = useQuery({
@@ -54,7 +40,18 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     enabled: !isPublicRoute,
     retry: false,
     staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
+
+  useEffect(() => {
+    setOnSessionExpired(() => {
+      queryClient.setQueryData(["auth-status"], false);
+      if (!PUBLIC_ROUTES.has(pathname)) {
+        router.replace("/users/login");
+      }
+    });
+    return () => setOnSessionExpired(null);
+  }, [pathname, queryClient, router]);
 
   useEffect(() => {
     if (!isPublicRoute && !isLoading && isAuthenticated === false) {

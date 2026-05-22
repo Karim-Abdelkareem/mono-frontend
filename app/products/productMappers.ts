@@ -77,7 +77,15 @@ export function normalizeFormValuesFromProduct(
     colorImages: product.colorImages.length
       ? product.colorImages
       : [{ color: "Black", images: [] }],
-    variants: product.variants.length ? product.variants : [emptyVariant],
+    variants: product.variants.length
+      ? product.variants.map((variant) => ({
+          size: variant.size,
+          colors: variant.colors.map((entry) => ({
+            color: entry.color,
+            quantity: Number(entry.quantity ?? 0),
+          })),
+        }))
+      : [emptyVariant],
   };
 }
 
@@ -255,16 +263,14 @@ export function buildUpdateProductPayload(
     allVariantColors.forEach((color) => {
       const prevQuantity = prevColorMap.get(color);
       const nextQuantity = nextColorMap.get(color);
-      if (typeof prevQuantity === "number" && typeof nextQuantity !== "number") {
+      const hadColor = prevQuantity !== undefined;
+      const hasColor = nextQuantity !== undefined;
+      if (hadColor && !hasColor) {
         colorCommands.push({ color, _delete: true });
-      } else if (typeof prevQuantity !== "number" && typeof nextQuantity === "number") {
-        colorCommands.push({ color, quantity: nextQuantity });
-      } else if (
-        typeof prevQuantity === "number" &&
-        typeof nextQuantity === "number" &&
-        prevQuantity !== nextQuantity
-      ) {
-        colorCommands.push({ color, quantity: nextQuantity });
+      } else if (!hadColor && hasColor) {
+        colorCommands.push({ color, quantity: Number(nextQuantity) });
+      } else if (hadColor && hasColor && Number(prevQuantity) !== Number(nextQuantity)) {
+        colorCommands.push({ color, quantity: Number(nextQuantity) });
       }
     });
 
