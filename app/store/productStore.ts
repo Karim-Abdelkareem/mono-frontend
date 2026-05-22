@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { api } from "../lib/api";
 
-export const PRODUCT_SIZES = ["S", "M", "L", "XL", "XXL"] as const;
+export const PRODUCT_SIZES = ["S", "M", "L", "XL", "XXL", "XXXL"] as const;
 export const PRODUCT_COLORS = [
   "Red",
   "Blue",
