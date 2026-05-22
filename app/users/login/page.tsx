@@ -3,7 +3,12 @@
 import { FormEvent, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import axios from "axios";
 import { api } from "../../lib/api";
+import {
+  fetchCurrentUser,
+  setAuthSessionCached,
+} from "../../lib/auth-session";
 import { toast } from "sonner";
 
 type LoginResponse = {
@@ -33,15 +38,28 @@ export default function LoginPage() {
         { email, password },
         { baseURL: baseUrl },
       );
-      const data = response.data;
 
-      queryClient.setQueryData(["auth-status"], true);
-      toast.success(data.message || "Login successful.");
+      const user = await fetchCurrentUser();
+      if (!user) {
+        toast.error(
+          "Login succeeded but the session could not be verified. Check API cookies and CORS.",
+        );
+        return;
+      }
+
+      setAuthSessionCached(queryClient, true, user);
+      toast.success(response.data.message || "Login successful.");
       setEmail("");
       setPassword("");
       router.replace("/");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Something went wrong.");
+      const message = axios.isAxiosError(err)
+        ? (err.response?.data as { message?: string } | undefined)?.message ||
+          err.message
+        : err instanceof Error
+          ? err.message
+          : "Something went wrong.";
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }

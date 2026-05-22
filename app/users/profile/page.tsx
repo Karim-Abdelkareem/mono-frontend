@@ -10,40 +10,31 @@ import {
   Phone,
   Shield,
 } from "lucide-react";
-import { api } from "../../lib/api";
+import {
+  CURRENT_USER_QUERY_KEY,
+  fetchCurrentUser,
+} from "../../lib/auth-session";
+import type { AuthUser } from "../../lib/types/auth";
 
-type CurrentUser = {
-  _id?: string;
-  name?: string;
+type ProfileUser = AuthUser & {
   fullName?: string;
-  email?: string;
   phone?: string;
   location?: string;
   department?: string;
-  role?: string;
   isActive?: boolean;
-  createdAt?: string;
 };
 
-async function getCurrentUser(): Promise<CurrentUser> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (!baseUrl) {
-    throw new Error("NEXT_PUBLIC_API_URL is not set.");
+async function getCurrentUser(): Promise<ProfileUser> {
+  const user = await fetchCurrentUser();
+  if (!user) {
+    throw new Error("Not authenticated.");
   }
-
-  const { data } = await api.get<{ data?: CurrentUser; user?: CurrentUser }>(
-    "/users/me",
-    {
-      baseURL: baseUrl,
-    },
-  );
-
-  return data?.data ?? data?.user ?? {};
+  return user;
 }
 
 export default function AdminProfilePage() {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["current-user-profile"],
+    queryKey: CURRENT_USER_QUERY_KEY,
     queryFn: getCurrentUser,
   });
 
@@ -52,7 +43,7 @@ export default function AdminProfilePage() {
     role: data?.role || "Administrator",
     employeeId: data?._id || "N/A",
     email: data?.email || "Not provided",
-    phone: data?.phone || "Not provided",
+    phone: data?.phone || data?.address?.phone || "Not provided",
     location: data?.location || "Not provided",
     department: data?.department || "Management",
     joinedAt: data?.createdAt

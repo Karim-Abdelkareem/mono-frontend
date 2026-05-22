@@ -19,6 +19,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { api } from "../lib/api";
+import { invalidateAuthQueries } from "../lib/auth-session";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -143,7 +144,7 @@ export default function Sidebar() {
     setIsLoggingOut(true);
     try {
       await api.post("/users/logout", {}, { baseURL: baseUrl });
-      queryClient.setQueryData(["auth-status"], false);
+      invalidateAuthQueries(queryClient);
       toast.success("Logged out successfully.");
       router.replace("/users/login");
     } catch {

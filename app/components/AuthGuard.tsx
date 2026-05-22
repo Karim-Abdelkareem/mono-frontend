@@ -3,30 +3,18 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useEffect } from "react";
-import { api, setOnSessionExpired } from "../lib/api";
+import {
+  AUTH_STATUS_QUERY_KEY,
+  checkAuthSession,
+  invalidateAuthQueries,
+} from "../lib/auth-session";
+import { setOnSessionExpired } from "../lib/api";
 
 type AuthGuardProps = {
   children: ReactNode;
 };
 
 const PUBLIC_ROUTES = new Set(["/users/login"]);
-
-const AUTH_CHECK_TIMEOUT_MS = 10_000;
-
-async function checkAuth(): Promise<boolean> {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (!baseUrl) return false;
-
-  try {
-    await api.get("/users/me", {
-      baseURL: baseUrl,
-      timeout: AUTH_CHECK_TIMEOUT_MS,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export default function AuthGuard({ children }: AuthGuardProps) {
   const pathname = usePathname();
@@ -35,8 +23,8 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const isPublicRoute = PUBLIC_ROUTES.has(pathname);
 
   const { data: isAuthenticated, isLoading } = useQuery({
-    queryKey: ["auth-status"],
-    queryFn: checkAuth,
+    queryKey: AUTH_STATUS_QUERY_KEY,
+    queryFn: checkAuthSession,
     enabled: !isPublicRoute,
     retry: false,
     staleTime: 30_000,
@@ -45,7 +33,8 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
   useEffect(() => {
     setOnSessionExpired(() => {
-      queryClient.setQueryData(["auth-status"], false);
+      invalidateAuthQueries(queryClient);
+      queryClient.setQueryData(AUTH_STATUS_QUERY_KEY, false);
       if (!PUBLIC_ROUTES.has(pathname)) {
         router.replace("/users/login");
       }

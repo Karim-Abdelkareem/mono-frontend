@@ -6,14 +6,14 @@ type RetryableRequestConfig = InternalAxiosRequestConfig & {
   skipAuthRefresh?: boolean;
 };
 
-const baseURL = process.env.NEXT_PUBLIC_API_URL;
+const baseURL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
 
 export const api = axios.create({
-  baseURL,
+  baseURL: baseURL || undefined,
   withCredentials: true,
 });
 
-let refreshPromise: Promise<void> | null = null;
+let refreshPromise: Promise<boolean> | null = null;
 let onSessionExpired: (() => void) | null = null;
 
 /**
@@ -28,25 +28,12 @@ function notifySessionExpired() {
   onSessionExpired?.();
 }
 
-/**
- * Uses `refreshToken` cookie; backend sets a new `token` access cookie on success.
- * POST /api/v1/users/refresh-token
- */
-export async function refreshAccessToken(): Promise<void> {
-  if (!baseURL) {
-    throw new Error("NEXT_PUBLIC_API_URL is not set.");
-  }
-
-  await api.post(
-    "/users/refresh-token",
-    {},
-    {
-      baseURL,
-      withCredentials: true,
-      skipAuthRefresh: true,
-    },
-  );
-}
+const NO_REFRESH_PATHS = [
+  "/users/refresh-token",
+  "/users/login",
+  "/users/register",
+  "/users/logout",
+] as const;
 
 function getRequestPath(url: string) {
   try {
@@ -58,11 +45,32 @@ function getRequestPath(url: string) {
 
 function isAuthEndpoint(url: string) {
   const path = getRequestPath(url);
-  return (
-    path.includes("/users/login") ||
-    path.includes("/users/logout") ||
-    path.includes("/users/refresh-token")
-  );
+  return NO_REFRESH_PATHS.some((segment) => path.includes(segment));
+}
+
+/**
+ * POST /users/refresh-token — sends refreshToken cookie; on success the server
+ * sets new token + refreshToken cookies (rotation).
+ */
+export async function refreshAccessToken(): Promise<boolean> {
+  if (!baseURL) {
+    return false;
+  }
+
+  try {
+    await api.post(
+      "/users/refresh-token",
+      {},
+      {
+        baseURL,
+        withCredentials: true,
+        skipAuthRefresh: true,
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 api.interceptors.response.use(
@@ -84,18 +92,18 @@ api.interceptors.response.use(
 
     originalRequest._retry = true;
 
-    try {
-      if (!refreshPromise) {
-        refreshPromise = refreshAccessToken().finally(() => {
-          refreshPromise = null;
-        });
-      }
-
-      await refreshPromise;
-      return api(originalRequest);
-    } catch (refreshError) {
-      notifySessionExpired();
-      return Promise.reject(refreshError);
+    if (!refreshPromise) {
+      refreshPromise = refreshAccessToken().finally(() => {
+        refreshPromise = null;
+      });
     }
+
+    const refreshed = await refreshPromise;
+    if (refreshed) {
+      return api(originalRequest);
+    }
+
+    notifySessionExpired();
+    return Promise.reject(error);
   },
 );
