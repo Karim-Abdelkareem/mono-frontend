@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import {
   Area,
   AreaChart,
@@ -16,55 +17,51 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-
-const revenueData = [
-  { month: "Jan", revenue: 12000 },
-  { month: "Feb", revenue: 15800 },
-  { month: "Mar", revenue: 14300 },
-  { month: "Apr", revenue: 19200 },
-  { month: "May", revenue: 22400 },
-  { month: "Jun", revenue: 24800 },
-];
-
-const orderData = [
-  { month: "Jan", paidItems: 78, products: 95 },
-  { month: "Feb", paidItems: 102, products: 118 },
-  { month: "Mar", paidItems: 95, products: 110 },
-  { month: "Apr", paidItems: 127, products: 146 },
-  { month: "May", paidItems: 140, products: 159 },
-  { month: "Jun", paidItems: 168, products: 190 },
-];
-
-const categorySalesData = [
-  { name: "T-Shirts", value: 320 },
-  { name: "Jeans", value: 240 },
-  { name: "Hoodies", value: 180 },
-  { name: "Jackets", value: 120 },
-];
-
-const sizeDemandData = [
-  { size: "XS", orders: 30 },
-  { size: "S", orders: 78 },
-  { size: "M", orders: 132 },
-  { size: "L", orders: 118 },
-  { size: "XL", orders: 72 },
-];
-
-const weeklyOrdersData = [
-  { week: "W1", orders: 62 },
-  { week: "W2", orders: 71 },
-  { week: "W3", orders: 66 },
-  { week: "W4", orders: 84 },
-  { week: "W5", orders: 89 },
-  { week: "W6", orders: 94 },
-];
+import {
+  getApiErrorMessage,
+  getDashboardStats,
+} from "@/app/lib/analyticsService";
+import { formatEgp } from "@/app/lib/orderService";
 
 const categoryColors = ["#111827", "#4b5563", "#6b7280", "#9ca3af"];
 
 const cardClassName =
   "rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md";
 
+function formatRevenueAxis(value: number) {
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
+  }
+  return String(value);
+}
+
+function ChartSkeleton({ className = "h-72" }: { className?: string }) {
+  return (
+    <div
+      className={`w-full animate-pulse rounded-lg bg-gray-100 ${className}`}
+      aria-hidden
+    />
+  );
+}
+
 export default function Home() {
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["dashboard-analytics"],
+    queryFn: () => getDashboardStats(),
+    staleTime: 60_000,
+  });
+
+  const summary = data?.summary;
+  const revenueByMonth = data?.revenueByMonth ?? [];
+  const activityByMonth = data?.activityByMonth ?? [];
+  const salesByCategory = data?.salesByCategory ?? [];
+  const ordersBySize = data?.ordersBySize ?? [];
+  const ordersByWeek = data?.ordersByWeek ?? [];
+
+  const errorMessage = isError
+    ? getApiErrorMessage(error, "Failed to load dashboard analytics.")
+    : null;
+
   return (
     <section className="min-h-full bg-gray-50 p-6 md:p-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
@@ -75,18 +72,30 @@ export default function Home() {
           </p>
         </header>
 
+        {errorMessage ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {errorMessage}
+          </div>
+        ) : null}
+
         <div className="grid gap-6 md:grid-cols-3">
           <div className={cardClassName}>
             <p className="text-sm text-gray-500">Total Revenue</p>
-            <p className="mt-2 text-2xl font-semibold text-gray-900">$110,500</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-900">
+              {isLoading ? "…" : formatEgp(summary?.totalRevenue)}
+            </p>
           </div>
           <div className={cardClassName}>
             <p className="text-sm text-gray-500">Paid Items</p>
-            <p className="mt-2 text-2xl font-semibold text-gray-900">710</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-900">
+              {isLoading ? "…" : (summary?.paidItems ?? 0)}
+            </p>
           </div>
           <div className={cardClassName}>
             <p className="text-sm text-gray-500">Products</p>
-            <p className="mt-2 text-2xl font-semibold text-gray-900">818</p>
+            <p className="mt-2 text-2xl font-semibold text-gray-900">
+              {isLoading ? "…" : (summary?.productsCount ?? 0)}
+            </p>
           </div>
         </div>
 
@@ -95,29 +104,40 @@ export default function Home() {
             <h2 className="mb-1 text-base font-semibold text-gray-900">Revenue</h2>
             <p className="mb-4 text-sm text-gray-500">Monthly revenue trend</p>
             <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={revenueData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="month" stroke="#6b7280" />
-                  <YAxis stroke="#6b7280" tickFormatter={(value) => `$${value / 1000}k`} />
-                  <Tooltip
-                    formatter={(value) => {
-                      const numericValue =
-                        typeof value === "number" ? value : Number(value ?? 0);
-                      return [`$${numericValue.toLocaleString()}`, "Revenue"];
-                    }}
-                    contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="revenue"
-                    stroke="#111827"
-                    strokeWidth={3}
-                    dot={{ r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {isLoading ? (
+                <ChartSkeleton />
+              ) : revenueByMonth.length === 0 ? (
+                <p className="flex h-full items-center justify-center text-sm text-gray-500">
+                  No revenue data yet.
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={revenueByMonth}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="month" stroke="#6b7280" />
+                    <YAxis
+                      stroke="#6b7280"
+                      tickFormatter={(value) => formatRevenueAxis(Number(value))}
+                    />
+                    <Tooltip
+                      formatter={(value) => {
+                        const numericValue =
+                          typeof value === "number" ? value : Number(value ?? 0);
+                        return [formatEgp(numericValue), "Revenue"];
+                      }}
+                      contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="#111827"
+                      strokeWidth={3}
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </article>
 
@@ -127,16 +147,24 @@ export default function Home() {
             </h2>
             <p className="mb-4 text-sm text-gray-500">Monthly order and catalog activity</p>
             <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={orderData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="month" stroke="#6b7280" />
-                  <YAxis stroke="#6b7280" />
-                  <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }} />
-                  <Bar dataKey="paidItems" fill="#111827" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="products" fill="#9ca3af" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {isLoading ? (
+                <ChartSkeleton />
+              ) : activityByMonth.length === 0 ? (
+                <p className="flex h-full items-center justify-center text-sm text-gray-500">
+                  No activity data yet.
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={activityByMonth}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="month" stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" />
+                    <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }} />
+                    <Bar dataKey="paidItems" fill="#111827" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="products" fill="#9ca3af" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </article>
         </div>
@@ -146,27 +174,35 @@ export default function Home() {
             <h2 className="mb-1 text-base font-semibold text-gray-900">Category Sales Mix</h2>
             <p className="mb-4 text-sm text-gray-500">Share of sold items by clothing type</p>
             <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={categorySalesData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={100}
-                    label
-                  >
-                    {categorySalesData.map((entry, index) => (
-                      <Cell
-                        key={`${entry.name}-${index}`}
-                        fill={categoryColors[index % categoryColors.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }} />
-                </PieChart>
-              </ResponsiveContainer>
+              {isLoading ? (
+                <ChartSkeleton />
+              ) : salesByCategory.length === 0 ? (
+                <p className="flex h-full items-center justify-center text-sm text-gray-500">
+                  No category sales yet.
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={salesByCategory}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={100}
+                      label
+                    >
+                      {salesByCategory.map((entry, index) => (
+                        <Cell
+                          key={`${entry.name}-${index}`}
+                          fill={categoryColors[index % categoryColors.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </article>
 
@@ -174,15 +210,23 @@ export default function Home() {
             <h2 className="mb-1 text-base font-semibold text-gray-900">Size Demand</h2>
             <p className="mb-4 text-sm text-gray-500">Most ordered sizes this period</p>
             <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={sizeDemandData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="size" stroke="#6b7280" />
-                  <YAxis stroke="#6b7280" />
-                  <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }} />
-                  <Bar dataKey="orders" fill="#111827" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {isLoading ? (
+                <ChartSkeleton />
+              ) : ordersBySize.length === 0 ? (
+                <p className="flex h-full items-center justify-center text-sm text-gray-500">
+                  No size data yet.
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={ordersBySize}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="size" stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" />
+                    <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }} />
+                    <Bar dataKey="orders" fill="#111827" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </article>
 
@@ -190,21 +234,29 @@ export default function Home() {
             <h2 className="mb-1 text-base font-semibold text-gray-900">Weekly Orders</h2>
             <p className="mb-4 text-sm text-gray-500">Order growth over recent weeks</p>
             <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={weeklyOrdersData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="week" stroke="#6b7280" />
-                  <YAxis stroke="#6b7280" />
-                  <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }} />
-                  <Area
-                    type="monotone"
-                    dataKey="orders"
-                    stroke="#111827"
-                    fill="#d1d5db"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              {isLoading ? (
+                <ChartSkeleton />
+              ) : ordersByWeek.length === 0 ? (
+                <p className="flex h-full items-center justify-center text-sm text-gray-500">
+                  No weekly orders yet.
+                </p>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={ordersByWeek}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="week" stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" />
+                    <Tooltip contentStyle={{ borderRadius: 12, borderColor: "#e5e7eb" }} />
+                    <Area
+                      type="monotone"
+                      dataKey="orders"
+                      stroke="#111827"
+                      fill="#d1d5db"
+                      strokeWidth={2}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </article>
         </div>
