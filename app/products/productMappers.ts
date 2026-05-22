@@ -174,6 +174,18 @@ function sameStringArray(a: string[], b: string[]) {
   return a.every((item, idx) => item === b[idx]);
 }
 
+function mapFullVariantsForUpdate(
+  variants: ProductFormValues["variants"],
+): NonNullable<ProductUpdatePayload["variants"]> {
+  return variants.map((variant) => ({
+    size: variant.size,
+    colors: variant.colors.map((entry) => ({
+      color: entry.color,
+      quantity: Number(entry.quantity ?? 0),
+    })),
+  }));
+}
+
 export function buildUpdateProductPayload(
   initialValues: ProductFormValues,
   currentValues: ProductFormValues,
@@ -228,57 +240,9 @@ export function buildUpdateProductPayload(
   });
   if (colorCommands.length) payload.colorImages = colorCommands;
 
-  const initialVariantMap = new Map(initialValues.variants.map((item) => [item.size, item.colors]));
-  const currentVariantMap = new Map(currentValues.variants.map((item) => [item.size, item.colors]));
-  const allSizes = new Set<ProductSize>([
-    ...Array.from(initialVariantMap.keys()),
-    ...Array.from(currentVariantMap.keys()),
-  ]);
-
-  const variantCommands: NonNullable<ProductUpdatePayload["variants"]> = [];
-  allSizes.forEach((size) => {
-    const prev = initialVariantMap.get(size);
-    const next = currentVariantMap.get(size);
-    if (prev && !next) {
-      variantCommands.push({ size, _delete: true });
-      return;
-    }
-    if (!prev && next) {
-      variantCommands.push({
-        size,
-        colors: next.map((entry) => ({ color: entry.color, quantity: entry.quantity })),
-      });
-      return;
-    }
-    if (!prev || !next) return;
-
-    const prevColorMap = new Map(prev.map((entry) => [entry.color, entry.quantity]));
-    const nextColorMap = new Map(next.map((entry) => [entry.color, entry.quantity]));
-    const allVariantColors = new Set<ProductColor>([
-      ...Array.from(prevColorMap.keys()),
-      ...Array.from(nextColorMap.keys()),
-    ]);
-    const colorCommands: { color: ProductColor; quantity?: number; _delete?: true }[] = [];
-
-    allVariantColors.forEach((color) => {
-      const prevQuantity = prevColorMap.get(color);
-      const nextQuantity = nextColorMap.get(color);
-      const hadColor = prevQuantity !== undefined;
-      const hasColor = nextQuantity !== undefined;
-      if (hadColor && !hasColor) {
-        colorCommands.push({ color, _delete: true });
-      } else if (!hadColor && hasColor) {
-        colorCommands.push({ color, quantity: Number(nextQuantity) });
-      } else if (hadColor && hasColor && Number(prevQuantity) !== Number(nextQuantity)) {
-        colorCommands.push({ color, quantity: Number(nextQuantity) });
-      }
-    });
-
-    if (colorCommands.length) {
-      variantCommands.push({ size, colors: colorCommands });
-    }
-  });
-  if (variantCommands.length) payload.variants = variantCommands;
+  if (JSON.stringify(initialValues.variants) !== JSON.stringify(currentValues.variants)) {
+    payload.variants = mapFullVariantsForUpdate(currentValues.variants);
+  }
 
   return payload;
 }
