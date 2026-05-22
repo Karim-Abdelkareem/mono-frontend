@@ -2,6 +2,8 @@
 
 import { create } from "zustand";
 import { api } from "../lib/api";
+import { normalizeSizeChart } from "../lib/sizeChartService";
+import { SizeChart } from "../lib/types/sizeChart";
 
 export const PRODUCT_SIZES = ["S", "M", "L", "XL", "XXL", "XXXL"] as const;
 export const PRODUCT_COLORS = [
@@ -53,6 +55,7 @@ export type ProductCreatePayload = {
   isActive: boolean;
   colorImages: ProductColorImage[];
   variants: ProductVariant[];
+  sizeChart?: string | null;
 };
 
 export type ProductColorImageUpdateCommand = {
@@ -80,6 +83,7 @@ export type ProductUpdatePayload = Partial<
 > & {
   colorImages?: ProductColorImageUpdateCommand[];
   variants?: ProductVariantUpdateCommand[];
+  sizeChart?: string | null;
 };
 
 export type ProductEntity = {
@@ -96,6 +100,7 @@ export type ProductEntity = {
   secondaryImage: string;
   colorImages: ProductColorImage[];
   variants: ProductVariant[];
+  sizeChart: SizeChart | null;
 };
 
 type ProductApiResponse = {
@@ -233,6 +238,12 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
     variants = Array.from(grouped.entries()).map(([size, colors]) => ({ size, colors }));
   }
 
+  const sizeChartRaw = source.sizeChart;
+  const sizeChart =
+    sizeChartRaw === null || sizeChartRaw === undefined
+      ? null
+      : normalizeSizeChart(sizeChartRaw);
+
   return {
     _id: typeof source._id === "string" ? source._id : "",
     title: {
@@ -261,6 +272,7 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
     secondaryImage,
     colorImages,
     variants,
+    sizeChart,
   };
 }
 

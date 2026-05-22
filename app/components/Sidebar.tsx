@@ -17,6 +17,7 @@ import {
   type LucideIcon,
   BadgePercent,
   MapPin,
+  Ruler,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { invalidateAuthQueries } from "../lib/auth-session";
@@ -87,6 +88,21 @@ const sidebarItems: SidebarItem[] = [
     ],
   },
   {
+    label: "Size charts",
+    icon: Ruler,
+    href: "/size-charts",
+    children: [
+      {
+        label: "All charts",
+        href: "/size-charts",
+      },
+      {
+        label: "Create chart",
+        href: "/size-charts/add-size-chart",
+      },
+    ],
+  },
+  {
     label: "Coupons",
     icon: BadgePercent,
     href: "/coupons",
@@ -124,6 +140,7 @@ export default function Sidebar() {
     "/products": false,
     "/category": false,
     "/coupons": false,
+    "/size-charts": false,
     "/shipping/governments": false,
   });
 

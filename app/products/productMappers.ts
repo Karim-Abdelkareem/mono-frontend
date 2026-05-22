@@ -31,6 +31,7 @@ export type ProductFormValues = {
   secondaryImage: string;
   colorImages: ProductColorImage[];
   variants: ProductFormVariant[];
+  sizeChartId: string;
 };
 
 export type ProductValidationResult = {
@@ -55,6 +56,7 @@ export const DEFAULT_PRODUCT_FORM_VALUES: ProductFormValues = {
   secondaryImage: "",
   colorImages: [{ color: "Black", images: [] }],
   variants: [emptyVariant],
+  sizeChartId: "",
 };
 
 export function normalizeFormValuesFromProduct(
@@ -86,6 +88,7 @@ export function normalizeFormValuesFromProduct(
           })),
         }))
       : [emptyVariant],
+    sizeChartId: product.sizeChart?._id ?? "",
   };
 }
 
@@ -144,6 +147,11 @@ export function validateProductForm(values: ProductFormValues): ProductValidatio
   return { valid: errors.length === 0, errors };
 }
 
+function resolveSizeChartId(sizeChartId: string): string | null {
+  const trimmed = sizeChartId.trim();
+  return trimmed ? trimmed : null;
+}
+
 export function buildCreateProductPayload(values: ProductFormValues): ProductCreatePayload {
   return {
     title: values.title,
@@ -166,6 +174,7 @@ export function buildCreateProductPayload(values: ProductFormValues): ProductCre
         quantity: entry.quantity,
       })),
     })),
+    sizeChart: resolveSizeChartId(values.sizeChartId),
   };
 }
 
@@ -242,6 +251,9 @@ export function buildUpdateProductPayload(
 
   if (JSON.stringify(initialValues.variants) !== JSON.stringify(currentValues.variants)) {
     payload.variants = mapFullVariantsForUpdate(currentValues.variants);
+  }
+  if (initialValues.sizeChartId !== currentValues.sizeChartId) {
+    payload.sizeChart = resolveSizeChartId(currentValues.sizeChartId);
   }
 
   return payload;

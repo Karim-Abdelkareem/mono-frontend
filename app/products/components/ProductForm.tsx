@@ -23,7 +23,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { useCategoryStore } from "@/app/store/categoryStore";
+import {
+  fetchActiveSizeCharts,
+  getSizeChartDisplayName,
+} from "@/app/lib/sizeChartService";
+import SizeChartPreview from "@/app/size-charts/components/SizeChartPreview";
 import {
   PRODUCT_COLORS,
   PRODUCT_SIZES,
@@ -115,6 +122,7 @@ export default function ProductForm({
     editSeed ? String(editSeed.discount) : "0",
   );
   const [isActive, setIsActive] = useState(editSeed?.isActive ?? true);
+  const [sizeChartId, setSizeChartId] = useState(editSeed?.sizeChartId ?? "");
   const [variants, setVariants] = useState<ProductFormValues["variants"]>(
     editSeed?.variants ?? [{ size: "M", colors: [{ color: "Black", quantity: 0 }] }],
   );
@@ -149,6 +157,27 @@ export default function ProductForm({
 
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
   const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+
+  const { data: activeSizeCharts = [], refetch: refetchActiveSizeCharts } = useQuery({
+    queryKey: ["size-charts-active"],
+    queryFn: fetchActiveSizeCharts,
+  });
+
+  const sizeChartOptions = useMemo(() => {
+    const options = [...activeSizeCharts];
+    const linked = initialProduct?.sizeChart;
+    if (linked && !options.some((chart) => chart._id === linked._id)) {
+      options.unshift(linked);
+    }
+    return options;
+  }, [activeSizeCharts, initialProduct?.sizeChart]);
+
+  const linkedSizeChartPreview = useMemo(() => {
+    if (sizeChartId && initialProduct?.sizeChart?._id === sizeChartId) {
+      return initialProduct.sizeChart;
+    }
+    return sizeChartOptions.find((chart) => chart._id === sizeChartId) ?? null;
+  }, [initialProduct, sizeChartId, sizeChartOptions]);
 
   useEffect(() => {
     fetchCategories();
@@ -207,6 +236,7 @@ export default function ProductForm({
           .map((img) => img.uploadedUrl),
       })),
       variants,
+      sizeChartId,
     }),
     [
       titleEn,
@@ -222,6 +252,7 @@ export default function ProductForm({
       secondaryImage,
       colorImages,
       variants,
+      sizeChartId,
     ],
   );
 
@@ -611,6 +642,12 @@ export default function ProductForm({
           (error.response?.data as { message?: string } | undefined)?.message ||
           "Failed to save product.";
         toast.error(message);
+        if (
+          message.toLowerCase().includes("size chart") &&
+          message.toLowerCase().includes("active")
+        ) {
+          void refetchActiveSizeCharts();
+        }
       } else {
         toast.error("Failed to save product.");
       }
@@ -718,6 +755,44 @@ export default function ProductForm({
               </div>
             )}
           </div>
+        </section>
+
+        <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+            Size chart
+          </h2>
+          <p className="text-xs text-gray-500">
+            Optional. Only active charts can be linked to new products.
+          </p>
+          <select
+            value={sizeChartId}
+            onChange={(event) => setSizeChartId(event.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-gray-900 md:max-w-md"
+          >
+            <option value="">None</option>
+            {sizeChartOptions.map((chart) => (
+              <option key={chart._id} value={chart._id}>
+                {getSizeChartDisplayName(chart)}
+                {!chart.isActive ? " (inactive)" : ""}
+              </option>
+            ))}
+          </select>
+          {linkedSizeChartPreview && (
+            <div className="space-y-2 rounded-lg border border-gray-100 bg-gray-50/50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-gray-800">
+                  {getSizeChartDisplayName(linkedSizeChartPreview)} ({linkedSizeChartPreview.unit})
+                </p>
+                <Link
+                  href={`/size-charts/edit-size-chart?id=${linkedSizeChartPreview._id}`}
+                  className="text-xs text-gray-600 underline hover:text-gray-900"
+                >
+                  Edit chart
+                </Link>
+              </div>
+              <SizeChartPreview chart={linkedSizeChartPreview} />
+            </div>
+          )}
         </section>
 
         <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
