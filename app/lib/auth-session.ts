@@ -8,7 +8,8 @@ export const AUTH_STATUS_QUERY_KEY = ["auth-status"] as const;
 export const CURRENT_USER_QUERY_KEY = ["current-user-profile"] as const;
 
 /**
- * Session probe — GET /users/me (401 triggers refresh + retry via api interceptor).
+ * Session probe — GET /users/me.
+ * On 401, the api client calls POST /refresh-token then retries once.
  */
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
   try {

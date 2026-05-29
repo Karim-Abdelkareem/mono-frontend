@@ -8,7 +8,11 @@ import {
   checkAuthSession,
   invalidateAuthQueries,
 } from "../lib/auth-session";
-import { setOnSessionExpired } from "../lib/api";
+import {
+  PROACTIVE_REFRESH_INTERVAL_MS,
+  refreshAccessToken,
+  setOnSessionExpired,
+} from "../lib/api";
 
 type AuthGuardProps = {
   children: ReactNode;
@@ -47,6 +51,32 @@ export default function AuthGuard({ children }: AuthGuardProps) {
       router.replace("/users/login");
     }
   }, [isAuthenticated, isLoading, isPublicRoute, router]);
+
+  // Keep access token fresh during long dashboard sessions (server TTL: 15 min).
+  useEffect(() => {
+    if (isPublicRoute || !isAuthenticated) return;
+
+    const refreshSession = () => {
+      void refreshAccessToken();
+    };
+
+    const intervalId = window.setInterval(
+      refreshSession,
+      PROACTIVE_REFRESH_INTERVAL_MS,
+    );
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        refreshSession();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [isAuthenticated, isPublicRoute]);
 
   if (!isPublicRoute && isLoading) {
     return (

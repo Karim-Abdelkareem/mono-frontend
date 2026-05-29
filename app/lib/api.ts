@@ -35,6 +35,12 @@ const NO_REFRESH_PATHS = [
   "/users/logout",
 ] as const;
 
+/** Access token lifetime on the server (15 minutes). */
+export const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
+
+/** Refresh slightly before expiry while the dashboard tab is open. */
+export const PROACTIVE_REFRESH_INTERVAL_MS = 14 * 60 * 1000;
+
 function getRequestPath(url: string) {
   try {
     return new URL(url, baseURL ?? "http://localhost").pathname;
@@ -49,8 +55,8 @@ function isAuthEndpoint(url: string) {
 }
 
 /**
- * POST /users/refresh-token — sends refreshToken cookie; on success the server
- * sets new token + refreshToken cookies (rotation).
+ * POST /refresh-token — sends `refreshToken` cookie; on success the server
+ * rotates session cookies (`token` + `refreshToken`). Access token TTL is 15 min.
  */
 export async function refreshAccessToken(): Promise<boolean> {
   if (!baseURL) {

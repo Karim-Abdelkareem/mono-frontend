@@ -14,6 +14,7 @@ import {
   Package,
   Tags,
   User,
+  Users,
   type LucideIcon,
   BadgePercent,
   MapPin,
@@ -128,7 +129,16 @@ const sidebarItems: SidebarItem[] = [
       },
     ],
   },
-  { label: "User Profile", icon: User, href: "/users/profile" },
+  {
+    label: "Users",
+    icon: Users,
+    href: "/users",
+  },
+  {
+    label: "Profile",
+    icon: User,
+    href: "/users/me",
+  },
 ];
 export default function Sidebar() {
   const router = useRouter();
