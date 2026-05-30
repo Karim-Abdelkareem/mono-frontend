@@ -2,9 +2,7 @@
 
 import {
   ChangeEvent,
-  Dispatch,
   FormEvent,
-  SetStateAction,
   useEffect,
   useMemo,
   useRef,
@@ -13,6 +11,7 @@ import {
 import axios from "axios";
 import Image from "next/image";
 import {
+  ArrowLeft,
   Check,
   ChevronDown,
   Loader2,
@@ -20,6 +19,7 @@ import {
   Search,
   Trash2,
   Upload,
+  Video,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -36,6 +36,8 @@ import {
   PRODUCT_SIZES,
   ProductColor,
   ProductEntity,
+  ProductMediaItem,
+  ProductMediaType,
   ProductSize,
   useProductStore,
 } from "@/app/store/productStore";
@@ -52,6 +54,10 @@ type UploadItem = {
   previewUrl: string;
   uploadedUrl: string;
   isUploading: boolean;
+};
+
+type MediaUploadItem = UploadItem & {
+  mediaType: ProductMediaType;
 };
 
 const colorSwatches: Record<ProductColor, string> = {
@@ -94,6 +100,16 @@ function toUploadItems(urls: string[]): UploadItem[] {
   }));
 }
 
+function toMediaUploadItems(items: ProductMediaItem[]): MediaUploadItem[] {
+  return items.map((item, index) => ({
+    id: `${item.url}-${item.type}-${index}`,
+    previewUrl: item.url,
+    uploadedUrl: item.url,
+    isUploading: false,
+    mediaType: item.type,
+  }));
+}
+
 export default function ProductForm({
   mode,
   productId,
@@ -112,8 +128,12 @@ export default function ProductForm({
 
   const [titleEn, setTitleEn] = useState(editSeed?.title.en ?? "");
   const [titleAr, setTitleAr] = useState(editSeed?.title.ar ?? "");
-  const [descriptionEn, setDescriptionEn] = useState(editSeed?.description.en ?? "");
-  const [descriptionAr, setDescriptionAr] = useState(editSeed?.description.ar ?? "");
+  const [descriptionEn, setDescriptionEn] = useState(
+    editSeed?.description.en ?? "",
+  );
+  const [descriptionAr, setDescriptionAr] = useState(
+    editSeed?.description.ar ?? "",
+  );
   const [category, setCategory] = useState(editSeed?.category ?? "");
   const [basePriceInput, setBasePriceInput] = useState(
     editSeed ? String(editSeed.basePrice) : "",
@@ -124,7 +144,9 @@ export default function ProductForm({
   const [isActive, setIsActive] = useState(editSeed?.isActive ?? true);
   const [sizeChartId, setSizeChartId] = useState(editSeed?.sizeChartId ?? "");
   const [variants, setVariants] = useState<ProductFormValues["variants"]>(
-    editSeed?.variants ?? [{ size: "M", colors: [{ color: "Black", quantity: 0 }] }],
+    editSeed?.variants ?? [
+      { size: "M", colors: [{ color: "Black", quantity: 0 }] },
+    ],
   );
   const [colorImages, setColorImages] = useState<
     Array<{ color: ProductColor; images: UploadItem[] }>
@@ -136,11 +158,10 @@ export default function ProductForm({
         }))
       : [{ color: "Black", images: [] }],
   );
-  const [mainImage, setMainImage] = useState<UploadItem[]>(
-    editSeed?.mainImage ? toUploadItems([editSeed.mainImage]) : [],
-  );
-  const [secondaryImage, setSecondaryImage] = useState<UploadItem[]>(
-    editSeed?.secondaryImage ? toUploadItems([editSeed.secondaryImage]) : [],
+  const [productMedia, setProductMedia] = useState<MediaUploadItem[]>(
+    editSeed?.productImagesAndVideos.length
+      ? toMediaUploadItems(editSeed.productImagesAndVideos)
+      : [],
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const baselineValues = editSeed;
@@ -158,10 +179,11 @@ export default function ProductForm({
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
   const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 
-  const { data: activeSizeCharts = [], refetch: refetchActiveSizeCharts } = useQuery({
-    queryKey: ["size-charts-active"],
-    queryFn: fetchActiveSizeCharts,
-  });
+  const { data: activeSizeCharts = [], refetch: refetchActiveSizeCharts } =
+    useQuery({
+      queryKey: ["size-charts-active"],
+      queryFn: fetchActiveSizeCharts,
+    });
 
   const sizeChartOptions = useMemo(() => {
     const options = [...activeSizeCharts];
@@ -227,8 +249,12 @@ export default function ProductForm({
       discount,
       finalPrice,
       isActive,
-      mainImage: mainImage[0]?.uploadedUrl ?? "",
-      secondaryImage: secondaryImage[0]?.uploadedUrl ?? "",
+      productImagesAndVideos: productMedia
+        .filter((item) => !item.isUploading && item.uploadedUrl)
+        .map((item) => ({
+          url: item.uploadedUrl,
+          type: item.mediaType,
+        })),
       colorImages: colorImages.map((entry) => ({
         color: entry.color,
         images: entry.images
@@ -248,15 +274,17 @@ export default function ProductForm({
       discount,
       finalPrice,
       isActive,
-      mainImage,
-      secondaryImage,
+      productMedia,
       colorImages,
       variants,
       sizeChartId,
     ],
   );
 
-  const uploadToCloudinary = async (file: File) => {
+  const uploadToCloudinary = async (
+    file: File,
+    mediaType: ProductMediaType,
+  ) => {
     if (!cloudName || !uploadPreset) {
       throw new Error(
         "Missing Cloudinary env vars: NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET.",
@@ -265,31 +293,32 @@ export default function ProductForm({
     const formData = new FormData();
     formData.append("file", file);
     formData.append("upload_preset", uploadPreset);
+    const resource = mediaType === "video" ? "video" : "image";
     const { data } = await axios.post<{ secure_url: string }>(
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      `https://api.cloudinary.com/v1_1/${cloudName}/${resource}/upload`,
       formData,
     );
     return data.secure_url;
   };
 
-  const uploadImages = async (
+  const uploadProductMedia = async (
     files: File[],
-    setter: Dispatch<SetStateAction<UploadItem[]>>,
-    single = false,
+    mediaType: ProductMediaType,
   ) => {
-    const newItems = files.map((file) => ({
+    const newItems: MediaUploadItem[] = files.map((file) => ({
       id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
       previewUrl: URL.createObjectURL(file),
       uploadedUrl: "",
       isUploading: true,
+      mediaType,
     }));
-    setter((prev) => (single ? newItems.slice(0, 1) : [...prev, ...newItems]));
+    setProductMedia((prev) => [...prev, ...newItems]);
 
     await Promise.all(
       newItems.map(async (item, index) => {
         try {
-          const uploadedUrl = await uploadToCloudinary(files[index]);
-          setter((prev) =>
+          const uploadedUrl = await uploadToCloudinary(files[index], mediaType);
+          setProductMedia((prev) =>
             prev.map((entry) =>
               entry.id === item.id
                 ? {
@@ -302,22 +331,37 @@ export default function ProductForm({
             ),
           );
         } catch {
-          setter((prev) => prev.filter((entry) => entry.id !== item.id));
+          setProductMedia((prev) =>
+            prev.filter((entry) => entry.id !== item.id),
+          );
           toast.error(`Failed to upload ${files[index].name}`);
         }
       }),
     );
   };
 
-  const handleSingleImageUpload = async (
+  const handleProductMediaUpload = async (
     event: ChangeEvent<HTMLInputElement>,
-    type: "main" | "secondary",
+    mediaType: ProductMediaType,
   ) => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (!file) return;
-    if (type === "main") await uploadImages([file], setMainImage, true);
-    else await uploadImages([file], setSecondaryImage, true);
+    if (!files.length) return;
+    await uploadProductMedia(files, mediaType);
+  };
+
+  const moveProductMedia = (index: number, direction: -1 | 1) => {
+    setProductMedia((prev) => {
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  };
+
+  const removeProductMedia = (id: string) => {
+    setProductMedia((prev) => prev.filter((item) => item.id !== id));
   };
 
   const handleColorImagesUpload = async (
@@ -344,7 +388,7 @@ export default function ProductForm({
     await Promise.all(
       newItems.map(async (item, index) => {
         try {
-          const uploadedUrl = await uploadToCloudinary(files[index]);
+          const uploadedUrl = await uploadToCloudinary(files[index], "image");
           setColorImages((prev) =>
             prev.map((entry) =>
               entry.color === color
@@ -383,11 +427,10 @@ export default function ProductForm({
 
   const anyImageUploading = useMemo(() => {
     return (
-      mainImage.some((img) => img.isUploading) ||
-      secondaryImage.some((img) => img.isUploading) ||
+      productMedia.some((item) => item.isUploading) ||
       colorImages.some((entry) => entry.images.some((img) => img.isUploading))
     );
-  }, [mainImage, secondaryImage, colorImages]);
+  }, [productMedia, colorImages]);
 
   const removeColorImage = (color: ProductColor, imageId: string) => {
     setColorImages((prev) =>
@@ -626,7 +669,10 @@ export default function ProductForm({
         await createProduct(payload);
         toast.success("Product created successfully.");
       } else if (mode === "edit" && productId && baselineValues) {
-        const payload = buildUpdateProductPayload(baselineValues, currentValues);
+        const payload = buildUpdateProductPayload(
+          baselineValues,
+          currentValues,
+        );
         if (Object.keys(payload).length === 0) {
           toast.info("No changes to update.");
           setIsSubmitting(false);
@@ -657,8 +703,17 @@ export default function ProductForm({
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8">
+    <div className="mx-auto w-full px-4 py-6 md:px-8">
       <div className="mb-6">
+        {mode === "edit" ? (
+          <Link
+            href="/products"
+            className="mb-4 inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900"
+          >
+            <ArrowLeft className="size-4" />
+            Back to products
+          </Link>
+        ) : null}
         <h1 className="text-2xl font-semibold text-gray-900">
           {mode === "create" ? "Add Product" : "Edit Product"}
         </h1>
@@ -781,7 +836,8 @@ export default function ProductForm({
             <div className="space-y-2 rounded-lg border border-gray-100 bg-gray-50/50 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium text-gray-800">
-                  {getSizeChartDisplayName(linkedSizeChartPreview)} ({linkedSizeChartPreview.unit})
+                  {getSizeChartDisplayName(linkedSizeChartPreview)} (
+                  {linkedSizeChartPreview.unit})
                 </p>
                 <Link
                   href={`/size-charts/edit-size-chart?id=${linkedSizeChartPreview._id}`}
@@ -826,53 +882,90 @@ export default function ProductForm({
         </section>
 
         <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Product Images
-          </h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            {[
-              {
-                key: "main" as const,
-                title: "Main image",
-                value: mainImage,
-                setter: setMainImage,
-              },
-              {
-                key: "secondary" as const,
-                title: "Secondary image",
-                value: secondaryImage,
-                setter: setSecondaryImage,
-              },
-            ].map((entry) => (
-              <div
-                key={entry.key}
-                className="rounded-lg border border-gray-200 p-3"
-              >
-                <p className="mb-2 text-sm font-medium text-gray-700">
-                  {entry.title}
-                </p>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700">
-                  <Upload className="size-4" />
-                  Upload {entry.title}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(event) =>
-                      handleSingleImageUpload(event, entry.key)
-                    }
-                  />
-                </label>
-                {entry.value[0] && (
-                  <div className="relative mt-3 aspect-square overflow-hidden rounded-lg border border-gray-200">
-                    <Image
-                      src={entry.value[0].previewUrl}
-                      alt={entry.title}
-                      fill
-                      className="object-cover"
-                      unoptimized
-                    />
-                    {entry.value[0].isUploading && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Product Images & Videos
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                <Upload className="size-4" />
+                Add image
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => handleProductMediaUpload(event, "image")}
+                />
+              </label>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                <Video className="size-4" />
+                Add video
+                <input
+                  type="file"
+                  accept="video/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => handleProductMediaUpload(event, "video")}
+                />
+              </label>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">
+            Order matters: the first two images are used as main and secondary
+            thumbnails across the store.
+          </p>
+          {!productMedia.length ? (
+            <p className="rounded-lg border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-500">
+              No media yet. Upload at least one image.
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {productMedia.map((item, index) => (
+                <div
+                  key={item.id}
+                  className="rounded-lg border border-gray-200 p-3"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium capitalize text-gray-700">
+                      {item.mediaType}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={index === 0}
+                        onClick={() => moveProductMedia(index, -1)}
+                        className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 disabled:opacity-40"
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        disabled={index === productMedia.length - 1}
+                        onClick={() => moveProductMedia(index, 1)}
+                        className="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 disabled:opacity-40"
+                      >
+                        Down
+                      </button>
+                    </div>
+                  </div>
+                  <div className="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-black">
+                    {item.mediaType === "video" ? (
+                      <video
+                        src={item.previewUrl}
+                        controls
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Image
+                        src={item.previewUrl}
+                        alt={`Product media ${index + 1}`}
+                        fill
+                        className="object-cover"
+                        unoptimized
+                      />
+                    )}
+                    {item.isUploading && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/35">
                         <Loader2 className="size-5 animate-spin text-white" />
                       </div>
@@ -881,9 +974,9 @@ export default function ProductForm({
                       type="button"
                       onClick={() =>
                         requestConfirm(
-                          `Remove ${entry.title}?`,
-                          `This will remove the current ${entry.title.toLowerCase()} from the product.`,
-                          () => entry.setter([]),
+                          "Remove media?",
+                          "This will remove the item from the product gallery.",
+                          () => removeProductMedia(item.id),
                         )
                       }
                       className="absolute right-1 top-1 rounded bg-white/90 p-1 text-red-600"
@@ -891,10 +984,10 @@ export default function ProductForm({
                       <Trash2 className="size-3.5" />
                     </button>
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">

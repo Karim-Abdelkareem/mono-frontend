@@ -253,14 +253,19 @@ export default function ProductsPage() {
               paginatedProducts.map((product) => {
                 const totalStock = getTotalStock(product);
                 const title = product.title?.en || product.title?.ar || "Untitled";
+                const thumbnail =
+                  product.mainImage ||
+                  product.productImagesAndVideos.find((item) => item.type === "image")
+                    ?.url ||
+                  "";
                 return (
                   <tr key={product._id} className="hover:bg-gray-50/70">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="relative size-12 overflow-hidden rounded-md border border-gray-200 bg-gray-100">
-                          {product.mainImage ? (
+                          {thumbnail ? (
                             <Image
-                              src={product.mainImage}
+                              src={thumbnail}
                               alt={title}
                               fill
                               className="object-cover"

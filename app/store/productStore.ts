@@ -27,6 +27,13 @@ export const PRODUCT_COLORS = [
 export type ProductSize = (typeof PRODUCT_SIZES)[number];
 export type ProductColor = (typeof PRODUCT_COLORS)[number];
 
+export type ProductMediaType = "image" | "video";
+
+export type ProductMediaItem = {
+  url: string;
+  type: ProductMediaType;
+};
+
 export type ProductColorImage = {
   color: ProductColor;
   images: string[];
@@ -52,6 +59,7 @@ export type ProductCreatePayload = {
   finalPrice: number;
   mainImage: string;
   secondaryImage: string;
+  productImagesAndVideos: ProductMediaItem[];
   isActive: boolean;
   colorImages: ProductColorImage[];
   variants: ProductVariant[];
@@ -98,6 +106,7 @@ export type ProductEntity = {
   isActive: boolean;
   mainImage: string;
   secondaryImage: string;
+  productImagesAndVideos: ProductMediaItem[];
   colorImages: ProductColorImage[];
   variants: ProductVariant[];
   sizeChart: SizeChart | null;
@@ -140,6 +149,20 @@ function normalizeStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string");
 }
 
+function normalizeProductMedia(value: unknown): ProductMediaItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const item = entry as Record<string, unknown>;
+      const url = typeof item.url === "string" ? item.url.trim() : "";
+      const type = item.type === "video" ? "video" : item.type === "image" ? "image" : null;
+      if (!url || !type) return null;
+      return { url, type };
+    })
+    .filter((entry): entry is ProductMediaItem => Boolean(entry));
+}
+
 export function normalizeProductEntity(raw: unknown): ProductEntity | null {
   if (!raw || typeof raw !== "object") return null;
   const source = raw as Record<string, unknown>;
@@ -151,6 +174,16 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
     typeof source.secondaryImage === "string"
       ? source.secondaryImage
       : legacyImages[1] ?? legacyImages[0] ?? "";
+
+  let productImagesAndVideos = normalizeProductMedia(source.productImagesAndVideos);
+  if (!productImagesAndVideos.length) {
+    const legacyMedia: ProductMediaItem[] = [];
+    if (mainImage) legacyMedia.push({ url: mainImage, type: "image" });
+    if (secondaryImage && secondaryImage !== mainImage) {
+      legacyMedia.push({ url: secondaryImage, type: "image" });
+    }
+    productImagesAndVideos = legacyMedia;
+  }
 
   const rawColorImages = Array.isArray(source.colorImages) ? source.colorImages : [];
   let colorImages: ProductColorImage[] = rawColorImages
@@ -270,6 +303,7 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
     isActive: Boolean(source.isActive),
     mainImage,
     secondaryImage,
+    productImagesAndVideos,
     colorImages,
     variants,
     sizeChart,

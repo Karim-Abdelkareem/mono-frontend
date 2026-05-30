@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import ProductForm from "../components/ProductForm";
@@ -43,6 +45,13 @@ export default function EditProductPage() {
   if (isLoading) {
     return (
       <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8">
+        <Link
+          href="/products"
+          className="mb-4 inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900"
+        >
+          <ArrowLeft className="size-4" />
+          Back to products
+        </Link>
         <p className="text-sm text-gray-500">Loading product...</p>
       </div>
     );

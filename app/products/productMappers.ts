@@ -5,6 +5,7 @@ import {
   ProductColorImage,
   ProductCreatePayload,
   ProductEntity,
+  ProductMediaItem,
   ProductSize,
   ProductUpdatePayload,
 } from "@/app/store/productStore";
@@ -27,8 +28,7 @@ export type ProductFormValues = {
   discount: number;
   finalPrice: number;
   isActive: boolean;
-  mainImage: string;
-  secondaryImage: string;
+  productImagesAndVideos: ProductMediaItem[];
   colorImages: ProductColorImage[];
   variants: ProductFormVariant[];
   sizeChartId: string;
@@ -52,8 +52,7 @@ export const DEFAULT_PRODUCT_FORM_VALUES: ProductFormValues = {
   discount: 0,
   finalPrice: 0,
   isActive: true,
-  mainImage: "",
-  secondaryImage: "",
+  productImagesAndVideos: [],
   colorImages: [{ color: "Black", images: [] }],
   variants: [emptyVariant],
   sizeChartId: "",
@@ -74,8 +73,9 @@ export function normalizeFormValuesFromProduct(
     discount: Number(product.discount ?? 0),
     finalPrice: Number(product.finalPrice ?? 0),
     isActive: Boolean(product.isActive),
-    mainImage: product.mainImage ?? "",
-    secondaryImage: product.secondaryImage ?? "",
+    productImagesAndVideos: product.productImagesAndVideos.length
+      ? product.productImagesAndVideos
+      : [],
     colorImages: product.colorImages.length
       ? product.colorImages
       : [{ color: "Black", images: [] }],
@@ -103,8 +103,11 @@ export function validateProductForm(values: ProductFormValues): ProductValidatio
   if (!values.category) {
     errors.push("Category is required.");
   }
-  if (!values.mainImage || !values.secondaryImage) {
-    errors.push("Main image and secondary image are required.");
+  if (!values.productImagesAndVideos.length) {
+    errors.push("Add at least one product image or video.");
+  }
+  if (!values.productImagesAndVideos.some((item) => item.type === "image")) {
+    errors.push("At least one product image is required.");
   }
   if (values.basePrice < 0 || values.discount < 0) {
     errors.push("Base price and discount must be non-negative.");
@@ -152,7 +155,17 @@ function resolveSizeChartId(sizeChartId: string): string | null {
   return trimmed ? trimmed : null;
 }
 
+function deriveLegacyImages(media: ProductMediaItem[]) {
+  const imageUrls = media
+    .filter((item) => item.type === "image" && item.url)
+    .map((item) => item.url);
+  const mainImage = imageUrls[0] ?? "";
+  const secondaryImage = imageUrls[1] ?? imageUrls[0] ?? "";
+  return { mainImage, secondaryImage };
+}
+
 export function buildCreateProductPayload(values: ProductFormValues): ProductCreatePayload {
+  const { mainImage, secondaryImage } = deriveLegacyImages(values.productImagesAndVideos);
   return {
     title: values.title,
     description: values.description,
@@ -161,8 +174,9 @@ export function buildCreateProductPayload(values: ProductFormValues): ProductCre
     discount: values.discount,
     finalPrice: values.finalPrice,
     isActive: values.isActive,
-    mainImage: values.mainImage,
-    secondaryImage: values.secondaryImage,
+    mainImage,
+    secondaryImage,
+    productImagesAndVideos: values.productImagesAndVideos,
     colorImages: values.colorImages.map((entry) => ({
       color: entry.color,
       images: Array.from(new Set(entry.images)),
@@ -215,9 +229,16 @@ export function buildUpdateProductPayload(
   if (initialValues.discount !== currentValues.discount) payload.discount = currentValues.discount;
   if (initialValues.finalPrice !== currentValues.finalPrice) payload.finalPrice = currentValues.finalPrice;
   if (initialValues.isActive !== currentValues.isActive) payload.isActive = currentValues.isActive;
-  if (initialValues.mainImage !== currentValues.mainImage) payload.mainImage = currentValues.mainImage;
-  if (initialValues.secondaryImage !== currentValues.secondaryImage) {
-    payload.secondaryImage = currentValues.secondaryImage;
+  if (
+    JSON.stringify(initialValues.productImagesAndVideos) !==
+    JSON.stringify(currentValues.productImagesAndVideos)
+  ) {
+    const { mainImage, secondaryImage } = deriveLegacyImages(
+      currentValues.productImagesAndVideos,
+    );
+    payload.productImagesAndVideos = currentValues.productImagesAndVideos;
+    payload.mainImage = mainImage;
+    payload.secondaryImage = secondaryImage;
   }
 
   const initialColorMap = new Map(initialValues.colorImages.map((item) => [item.color, item.images]));
