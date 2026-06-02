@@ -38,8 +38,11 @@ export type ShippingAddress = {
 
 export type OrderProductRef = {
   _id?: string;
-  title?: string;
+  title?: string | { en?: string; ar?: string };
   images?: string[];
+  mainImage?: string;
+  secondaryImage?: string;
+  productImagesAndVideos?: Array<{ url?: string; type?: "image" | "video" | string }>;
   finalPrice?: number;
   basePrice?: number;
 };
@@ -149,6 +152,38 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
+function normalizeProductTitle(value: unknown): string | { en?: string; ar?: string } | undefined {
+  if (typeof value === "string") return value;
+  const row = asRecord(value);
+  if (!row) return undefined;
+  const en = typeof row.en === "string" ? row.en : undefined;
+  const ar = typeof row.ar === "string" ? row.ar : undefined;
+  if (!en && !ar) return undefined;
+  return { en, ar };
+}
+
+function normalizeProductImages(productRow: Record<string, unknown>): string[] | undefined {
+  const directImages = Array.isArray(productRow.images)
+    ? (productRow.images as unknown[]).filter((img): img is string => typeof img === "string")
+    : [];
+
+  const productMedia = Array.isArray(productRow.productImagesAndVideos)
+    ? (productRow.productImagesAndVideos as unknown[])
+        .map((entry) => asRecord(entry))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+        .filter((entry) => entry.type === "image" && typeof entry.url === "string")
+        .map((entry) => entry.url as string)
+    : [];
+
+  const mainImage = typeof productRow.mainImage === "string" ? productRow.mainImage : "";
+  const secondaryImage =
+    typeof productRow.secondaryImage === "string" ? productRow.secondaryImage : "";
+
+  const merged = [...directImages, ...productMedia, mainImage, secondaryImage].filter(Boolean);
+  if (!merged.length) return undefined;
+  return Array.from(new Set(merged));
+}
+
 function normalizeOrder(raw: unknown): Order | null {
   const source = asRecord(raw);
   if (!source || typeof source._id !== "string") return null;
@@ -160,6 +195,7 @@ function normalizeOrder(raw: unknown): Order | null {
     if (!row) continue;
     const product = row.product;
     const productRow = asRecord(product);
+    const safeProductRow = productRow ?? {};
     items.push({
       _id: typeof row._id === "string" ? row._id : undefined,
       product:
@@ -167,11 +203,24 @@ function normalizeOrder(raw: unknown): Order | null {
           ? product
           : {
               _id: typeof productRow?._id === "string" ? productRow._id : undefined,
-              title: typeof productRow?.title === "string" ? productRow.title : undefined,
-              images: Array.isArray(productRow?.images)
-                ? (productRow.images as unknown[]).filter(
-                    (img): img is string => typeof img === "string",
-                  )
+              title: normalizeProductTitle(safeProductRow.title),
+              images: normalizeProductImages(safeProductRow),
+              mainImage:
+                typeof safeProductRow.mainImage === "string"
+                  ? safeProductRow.mainImage
+                  : undefined,
+              secondaryImage:
+                typeof safeProductRow.secondaryImage === "string"
+                  ? safeProductRow.secondaryImage
+                  : undefined,
+              productImagesAndVideos: Array.isArray(safeProductRow.productImagesAndVideos)
+                ? (safeProductRow.productImagesAndVideos as unknown[])
+                    .map((entry) => asRecord(entry))
+                    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+                    .map((entry) => ({
+                      url: typeof entry.url === "string" ? entry.url : undefined,
+                      type: typeof entry.type === "string" ? entry.type : undefined,
+                    }))
                 : undefined,
               finalPrice: Number(productRow?.finalPrice ?? NaN) || undefined,
               basePrice: Number(productRow?.basePrice ?? NaN) || undefined,
@@ -301,12 +350,23 @@ export function getCustomerDisplay(order: Pick<Order, "user" | "guestEmail" | "s
 }
 
 export function getProductTitle(product: OrderItem["product"]) {
-  if (typeof product === "object" && product?.title) return product.title;
+  if (typeof product === "object" && product?.title) {
+    if (typeof product.title === "string") return product.title;
+    return product.title.en || product.title.ar || "Item";
+  }
   return "Item";
 }
 
 export function getProductImage(product: OrderItem["product"]) {
-  if (typeof product === "object" && product?.images?.[0]) return product.images[0];
+  if (typeof product === "object") {
+    if (product.mainImage) return product.mainImage;
+    if (product.images?.[0]) return product.images[0];
+    const mediaImage = product.productImagesAndVideos?.find(
+      (entry) => entry?.type === "image" && entry?.url,
+    )?.url;
+    if (mediaImage) return mediaImage;
+    if (product.secondaryImage) return product.secondaryImage;
+  }
   return null;
 }
 

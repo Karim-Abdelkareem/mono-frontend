@@ -30,7 +30,7 @@ function formatDate(value?: string) {
 }
 
 function getItemSummary(
-  items: { product: string | { title?: string }; quantity: number }[],
+  items: { product: string | { title?: string | { en?: string; ar?: string } }; quantity: number }[],
 ) {
   if (!items.length) return "-";
   const firstTitle = getProductTitle(items[0].product);
