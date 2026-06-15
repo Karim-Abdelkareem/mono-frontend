@@ -326,7 +326,9 @@ function EditableOrderLineItem({
     (fallbackItem ? getProductImage(fallbackItem.product) : null);
   const title = product
     ? getProductLabel(product)
-    : getProductTitle(fallbackItem?.product);
+    : fallbackItem
+      ? getProductTitle(fallbackItem.product)
+      : "Item";
   const lineTotal = roundOrderMoney(editItem.price * editItem.quantity);
 
   return (
