@@ -100,6 +100,17 @@ export type Order = {
   updatedAt?: string;
 };
 
+export type OrderItemUpdate = {
+  _id?: string;
+  product: string;
+  size: string;
+  color: string;
+  quantity: number;
+  price: number;
+  variant: string;
+  totalPrice: number;
+};
+
 export type OrderUpdateBody = {
   orderStatus?: OrderStatus;
   shippingStatus?: ShippingStatus;
@@ -107,6 +118,8 @@ export type OrderUpdateBody = {
   trackingNumber?: string;
   turboShipmentId?: string;
   adminNotes?: string;
+  items?: OrderItemUpdate[];
+  shippingFee?: number;
 };
 
 export type GetOrdersParams = {
@@ -169,10 +182,10 @@ function normalizeProductImages(productRow: Record<string, unknown>): string[] |
 
   const productMedia = Array.isArray(productRow.productImagesAndVideos)
     ? (productRow.productImagesAndVideos as unknown[])
-        .map((entry) => asRecord(entry))
-        .filter((entry): entry is Record<string, unknown> => Boolean(entry))
-        .filter((entry) => entry.type === "image" && typeof entry.url === "string")
-        .map((entry) => entry.url as string)
+      .map((entry) => asRecord(entry))
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+      .filter((entry) => entry.type === "image" && typeof entry.url === "string")
+      .map((entry) => entry.url as string)
     : [];
 
   const mainImage = typeof productRow.mainImage === "string" ? productRow.mainImage : "";
@@ -186,7 +199,15 @@ function normalizeProductImages(productRow: Record<string, unknown>): string[] |
 
 function normalizeOrder(raw: unknown): Order | null {
   const source = asRecord(raw);
-  if (!source || typeof source._id !== "string") return null;
+  if (!source) return null;
+
+  const orderId =
+    typeof source._id === "string"
+      ? source._id
+      : source._id != null
+        ? String(source._id)
+        : null;
+  if (!orderId) return null;
 
   const itemsRaw = Array.isArray(source.items) ? source.items : [];
   const items: OrderItem[] = [];
@@ -202,29 +223,29 @@ function normalizeOrder(raw: unknown): Order | null {
         typeof product === "string"
           ? product
           : {
-              _id: typeof productRow?._id === "string" ? productRow._id : undefined,
-              title: normalizeProductTitle(safeProductRow.title),
-              images: normalizeProductImages(safeProductRow),
-              mainImage:
-                typeof safeProductRow.mainImage === "string"
-                  ? safeProductRow.mainImage
-                  : undefined,
-              secondaryImage:
-                typeof safeProductRow.secondaryImage === "string"
-                  ? safeProductRow.secondaryImage
-                  : undefined,
-              productImagesAndVideos: Array.isArray(safeProductRow.productImagesAndVideos)
-                ? (safeProductRow.productImagesAndVideos as unknown[])
-                    .map((entry) => asRecord(entry))
-                    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
-                    .map((entry) => ({
-                      url: typeof entry.url === "string" ? entry.url : undefined,
-                      type: typeof entry.type === "string" ? entry.type : undefined,
-                    }))
+            _id: typeof productRow?._id === "string" ? productRow._id : undefined,
+            title: normalizeProductTitle(safeProductRow.title),
+            images: normalizeProductImages(safeProductRow),
+            mainImage:
+              typeof safeProductRow.mainImage === "string"
+                ? safeProductRow.mainImage
                 : undefined,
-              finalPrice: Number(productRow?.finalPrice ?? NaN) || undefined,
-              basePrice: Number(productRow?.basePrice ?? NaN) || undefined,
-            },
+            secondaryImage:
+              typeof safeProductRow.secondaryImage === "string"
+                ? safeProductRow.secondaryImage
+                : undefined,
+            productImagesAndVideos: Array.isArray(safeProductRow.productImagesAndVideos)
+              ? (safeProductRow.productImagesAndVideos as unknown[])
+                .map((entry) => asRecord(entry))
+                .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+                .map((entry) => ({
+                  url: typeof entry.url === "string" ? entry.url : undefined,
+                  type: typeof entry.type === "string" ? entry.type : undefined,
+                }))
+              : undefined,
+            finalPrice: Number(productRow?.finalPrice ?? NaN) || undefined,
+            basePrice: Number(productRow?.basePrice ?? NaN) || undefined,
+          },
       quantity: Number(row.quantity ?? 0),
       price: Number(row.price ?? 0),
       variant: typeof row.variant === "string" ? row.variant : "",
@@ -243,10 +264,15 @@ function normalizeOrder(raw: unknown): Order | null {
     const userRow = asRecord(user);
     normalizedUser = userRow
       ? {
-          _id: typeof userRow._id === "string" ? userRow._id : undefined,
-          name: typeof userRow.name === "string" ? userRow.name : undefined,
-          email: typeof userRow.email === "string" ? userRow.email : undefined,
-        }
+        _id:
+          typeof userRow._id === "string"
+            ? userRow._id
+            : userRow._id != null
+              ? String(userRow._id)
+              : undefined,
+        name: typeof userRow.name === "string" ? userRow.name : undefined,
+        email: typeof userRow.email === "string" ? userRow.email : undefined,
+      }
       : undefined;
   }
 
@@ -258,17 +284,17 @@ function normalizeOrder(raw: unknown): Order | null {
     const couponRow = asRecord(coupon);
     normalizedCoupon = couponRow
       ? {
-          _id: typeof couponRow._id === "string" ? couponRow._id : undefined,
-          code: typeof couponRow.code === "string" ? couponRow.code : undefined,
-          type: typeof couponRow.type === "string" ? couponRow.type : undefined,
-          value: Number(couponRow.value ?? NaN) || undefined,
-        }
+        _id: typeof couponRow._id === "string" ? couponRow._id : undefined,
+        code: typeof couponRow.code === "string" ? couponRow.code : undefined,
+        type: typeof couponRow.type === "string" ? couponRow.type : undefined,
+        value: Number(couponRow.value ?? NaN) || undefined,
+      }
       : undefined;
   }
 
   return {
-    _id: source._id,
-    orderNumber: typeof source.orderNumber === "string" ? source.orderNumber : source._id,
+    _id: orderId,
+    orderNumber: typeof source.orderNumber === "string" ? source.orderNumber : orderId,
     user: normalizedUser,
     guestEmail: typeof source.guestEmail === "string" ? source.guestEmail : undefined,
     items,
@@ -330,23 +356,61 @@ export function formatEgp(value?: number) {
 
 export function parseVariant(variant?: string) {
   if (!variant) return { size: "-", color: "-" };
-  const [size, color] = variant.split("__");
-  return { size: size || "-", color: color || "-" };
+  const sep = "__";
+  const index = variant.indexOf(sep);
+  if (index <= 0) return { size: "-", color: "-" };
+  return {
+    size: variant.slice(0, index) || "-",
+    color: variant.slice(index + sep.length) || "-",
+  };
+}
+
+export function isRegisteredOrderUser(
+  user: Order["user"],
+): user is OrderUserRef | string {
+  if (user == null) return false;
+  if (typeof user === "string") return user.trim().length > 0;
+  return typeof user === "object";
 }
 
 export function getCustomerDisplay(order: Pick<Order, "user" | "guestEmail" | "shippingAddress">) {
   if (order.user && typeof order.user === "object") {
     return {
-      name: order.user.name || "Customer",
-      email: order.user.email || "-",
+      name: order.user.name || order.shippingAddress?.fullName || "Customer",
+      email: order.user.email || order.guestEmail || "-",
       phone: order.shippingAddress?.phone1 || "-",
+      isGuest: false,
+    };
+  }
+  if (typeof order.user === "string" && order.user.trim()) {
+    return {
+      name: order.shippingAddress?.fullName || "Registered customer",
+      email: order.guestEmail || "-",
+      phone: order.shippingAddress?.phone1 || "-",
+      isGuest: false,
     };
   }
   return {
     name: order.shippingAddress?.fullName || "Guest",
     email: order.guestEmail || "-",
     phone: order.shippingAddress?.phone1 || "-",
+    isGuest: true,
   };
+}
+
+export function getProductId(product: OrderItem["product"]) {
+  if (typeof product === "string") return product;
+  return product._id ?? "";
+}
+
+export function roundOrderMoney(value: number) {
+  return Math.round(Math.max(0, value) * 100) / 100;
+}
+
+export function computeItemsSubtotal(items: Pick<OrderItemUpdate, "price" | "quantity">[]) {
+  return roundOrderMoney(
+    items.reduce((sum, item) => sum + item.price * item.quantity, 0),
+  );
 }
 
 export function getProductTitle(product: OrderItem["product"]) {
@@ -471,19 +535,50 @@ export async function getOrderById(id: string): Promise<Order | null> {
   return normalizeOrder(orderRaw);
 }
 
-export async function updateOrder(id: string, body: OrderUpdateBody): Promise<Order> {
+export type TurboEditResult = {
+  attempted?: boolean;
+  ok?: boolean;
+  skipped?: boolean;
+  reason?: string;
+  error?: string;
+  changedFields?: string[];
+};
+
+export type OrderUpdateResult = {
+  order: Order;
+  message?: string;
+  turboEdit?: TurboEditResult;
+};
+
+export async function updateOrder(
+  id: string,
+  body: OrderUpdateBody,
+): Promise<OrderUpdateResult> {
   const baseURL = getBaseUrl();
-  const { data } = await api.patch<OrderResponse>(`/orders/${id}`, body, { baseURL });
-  const payload = data?.data;
-  const orderRaw =
-    (payload && typeof payload === "object" && "order" in (payload as object)
-      ? (payload as { order?: unknown }).order
-      : undefined) ?? data?.order ?? payload;
+  const { data } = await api.patch<OrderResponse & { message?: string }>(
+    `/orders/${id}`,
+    body,
+    { baseURL },
+  );
+  const payload = data?.data as
+    | { order?: unknown; turboEdit?: TurboEditResult }
+    | undefined;
+  const orderRaw = payload?.order ?? data?.order ?? payload;
   const order = normalizeOrder(orderRaw);
-  if (!order) {
-    throw new Error("Order updated but response is invalid.");
+  if (order) {
+    return {
+      order,
+      message: data?.message,
+      turboEdit: payload?.turboEdit,
+    };
   }
-  return order;
+
+  const refetched = await getOrderById(id);
+  if (refetched) {
+    return { order: refetched, message: data?.message };
+  }
+
+  throw new Error("Order updated but response could not be parsed.");
 }
 
 export async function deleteOrder(id: string): Promise<void> {

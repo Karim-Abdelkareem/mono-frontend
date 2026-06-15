@@ -6,26 +6,10 @@ import { normalizeSizeChart } from "../lib/sizeChartService";
 import { SizeChart } from "../lib/types/sizeChart";
 
 export const PRODUCT_SIZES = ["S", "M", "L", "XL", "XXL", "XXXL"] as const;
-export const PRODUCT_COLORS = [
-  "Red",
-  "Blue",
-  "Green",
-  "Yellow",
-  "Purple",
-  "Orange",
-  "Pink",
-  "Brown",
-  "Gray",
-  "Black",
-  "White",
-  "Baby Blue",
-  "Baige",
-  "Burgundy",
-  "Petroleum",
-] as const;
 
 export type ProductSize = (typeof PRODUCT_SIZES)[number];
-export type ProductColor = (typeof PRODUCT_COLORS)[number];
+/** Palette color id (MongoDB ObjectId string). */
+export type ProductColor = string;
 
 export type ProductMediaType = "image" | "video";
 
@@ -136,8 +120,13 @@ function getBaseUrl() {
   return baseUrl;
 }
 
-function isProductColor(value: string): value is ProductColor {
-  return (PRODUCT_COLORS as readonly string[]).includes(value);
+function extractColorId(raw: unknown): string | null {
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj._id === "string" && obj._id.trim()) return obj._id.trim();
+  }
+  return null;
 }
 
 function isProductSize(value: string): value is ProductSize {
@@ -189,8 +178,8 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
   let colorImages: ProductColorImage[] = rawColorImages
     .map((entry) => {
       const item = entry as Record<string, unknown>;
-      const color = typeof item.color === "string" ? item.color : "";
-      if (!isProductColor(color)) return null;
+      const color = extractColorId(item.color);
+      if (!color) return null;
       return { color, images: normalizeStringArray(item.images) };
     })
     .filter((entry): entry is ProductColorImage => Boolean(entry));
@@ -206,8 +195,8 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
         const colors = (variant.colors as unknown[]).reduce<ProductVariantColor[]>(
           (colorAcc, colorEntry) => {
             const colorData = colorEntry as Record<string, unknown>;
-            const color = typeof colorData.color === "string" ? colorData.color : "";
-            if (!isProductColor(color)) return colorAcc;
+            const color = extractColorId(colorData.color);
+            if (!color) return colorAcc;
             colorAcc.push({
               color,
               quantity: Number(colorData.quantity ?? 0),
@@ -221,8 +210,8 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
         return acc;
       }
 
-      const legacyColor = typeof variant.color === "string" ? variant.color : "";
-      if (!isProductColor(legacyColor)) {
+      const legacyColor = extractColorId(variant.color);
+      if (!legacyColor) {
         acc.push({ size, colors: [] });
         return acc;
       }
@@ -242,11 +231,11 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
   );
 
   if (!colorImages.length) {
-    const map = new Map<ProductColor, string[]>();
+    const map = new Map<string, string[]>();
     rawVariants.forEach((variantEntry) => {
       const variant = variantEntry as Record<string, unknown>;
-      const color = typeof variant.color === "string" ? variant.color : "";
-      if (!isProductColor(color)) return;
+      const color = extractColorId(variant.color);
+      if (!color) return;
       const images = normalizeStringArray(variant.images);
       map.set(color, Array.from(new Set([...(map.get(color) ?? []), ...images])));
     });
@@ -258,8 +247,8 @@ export function normalizeProductEntity(raw: unknown): ProductEntity | null {
     rawVariants.forEach((variantEntry) => {
       const variant = variantEntry as Record<string, unknown>;
       const size = typeof variant.size === "string" ? variant.size : "";
-      const color = typeof variant.color === "string" ? variant.color : "";
-      if (!isProductSize(size) || !isProductColor(color)) return;
+      const color = extractColorId(variant.color);
+      if (!isProductSize(size) || !color) return;
       const current = grouped.get(size) ?? [];
       current.push({
         color,

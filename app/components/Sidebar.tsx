@@ -18,6 +18,7 @@ import {
   type LucideIcon,
   BadgePercent,
   MapPin,
+  Palette,
   Ruler,
 } from "lucide-react";
 import { api } from "../lib/api";
@@ -104,6 +105,21 @@ const sidebarItems: SidebarItem[] = [
     ],
   },
   {
+    label: "Colors",
+    icon: Palette,
+    href: "/colors",
+    children: [
+      {
+        label: "All colors",
+        href: "/colors",
+      },
+      {
+        label: "Add color",
+        href: "/colors/add-color",
+      },
+    ],
+  },
+  {
     label: "Coupons",
     icon: BadgePercent,
     href: "/coupons",
@@ -151,6 +167,7 @@ export default function Sidebar() {
     "/category": false,
     "/coupons": false,
     "/size-charts": false,
+    "/colors": false,
     "/shipping/governments": false,
   });
 

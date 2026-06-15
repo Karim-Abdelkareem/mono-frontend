@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import axios from "axios";
-import { ArrowDownAZ, ArrowUpAZ, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDownAZ, ArrowUpAZ, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { useProductStore } from "@/app/store/productStore";
 import { toast } from "sonner";
 
@@ -274,7 +274,12 @@ export default function ProductsPage() {
                           ) : null}
                         </div>
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-gray-900">{title}</p>
+                          <Link
+                            href={`/products/view-product?id=${product._id}`}
+                            className="truncate font-medium text-gray-900 hover:underline"
+                          >
+                            {title}
+                          </Link>
                           <p className="text-xs text-gray-500">{product.variants.length} sizes</p>
                         </div>
                       </div>
@@ -302,6 +307,13 @@ export default function ProductsPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center gap-2">
+                        <Link
+                          href={`/products/view-product?id=${product._id}`}
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          <Eye className="size-3.5" />
+                          View
+                        </Link>
                         <Link
                           href={`/products/edit-product?id=${product._id}`}
                           className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"

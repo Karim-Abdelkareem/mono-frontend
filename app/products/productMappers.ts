@@ -1,5 +1,4 @@
 import {
-  PRODUCT_COLORS,
   PRODUCT_SIZES,
   ProductColor,
   ProductColorImage,
@@ -39,29 +38,37 @@ export type ProductValidationResult = {
   errors: string[];
 };
 
-const emptyVariant: ProductFormVariant = {
+const emptyVariant = (defaultColorId = ""): ProductFormVariant => ({
   size: "M",
-  colors: [{ color: "Black", quantity: 0 }],
-};
+  colors: [{ color: defaultColorId, quantity: 0 }],
+});
 
-export const DEFAULT_PRODUCT_FORM_VALUES: ProductFormValues = {
-  title: { en: "", ar: "" },
-  description: { en: "", ar: "" },
-  category: "",
-  basePrice: 0,
-  discount: 0,
-  finalPrice: 0,
-  isActive: true,
-  productImagesAndVideos: [],
-  colorImages: [{ color: "Black", images: [] }],
-  variants: [emptyVariant],
-  sizeChartId: "",
-};
+export function createDefaultProductFormValues(
+  defaultColorId = "",
+): ProductFormValues {
+  return {
+    title: { en: "", ar: "" },
+    description: { en: "", ar: "" },
+    category: "",
+    basePrice: 0,
+    discount: 0,
+    finalPrice: 0,
+    isActive: true,
+    productImagesAndVideos: [],
+    colorImages: [{ color: defaultColorId, images: [] }],
+    variants: [emptyVariant(defaultColorId)],
+    sizeChartId: "",
+  };
+}
+
+export const DEFAULT_PRODUCT_FORM_VALUES = createDefaultProductFormValues();
 
 export function normalizeFormValuesFromProduct(
   product: ProductEntity | null,
+  fallbackColorId = "",
 ): ProductFormValues {
-  if (!product) return DEFAULT_PRODUCT_FORM_VALUES;
+  if (!product) return createDefaultProductFormValues(fallbackColorId);
+  const firstColor = product.colorImages[0]?.color || fallbackColorId;
   return {
     title: { en: product.title.en ?? "", ar: product.title.ar ?? "" },
     description: {
@@ -78,7 +85,7 @@ export function normalizeFormValuesFromProduct(
       : [],
     colorImages: product.colorImages.length
       ? product.colorImages
-      : [{ color: "Black", images: [] }],
+      : [{ color: firstColor, images: [] }],
     variants: product.variants.length
       ? product.variants.map((variant) => ({
           size: variant.size,
@@ -87,12 +94,15 @@ export function normalizeFormValuesFromProduct(
             quantity: Number(entry.quantity ?? 0),
           })),
         }))
-      : [emptyVariant],
+      : [emptyVariant(firstColor)],
     sizeChartId: product.sizeChart?._id ?? "",
   };
 }
 
-export function validateProductForm(values: ProductFormValues): ProductValidationResult {
+export function validateProductForm(
+  values: ProductFormValues,
+  paletteIds?: Set<string>,
+): ProductValidationResult {
   const errors: string[] = [];
   if (!values.title.en.trim() || !values.title.ar.trim()) {
     errors.push("Title (EN/AR) is required.");
@@ -116,11 +126,13 @@ export function validateProductForm(values: ProductFormValues): ProductValidatio
   const colorImageSet = new Set(values.colorImages.map((entry) => entry.color));
   if (!values.colorImages.length) errors.push("At least one color gallery is required.");
   values.colorImages.forEach((entry) => {
-    if (!PRODUCT_COLORS.includes(entry.color)) {
-      errors.push(`Invalid color in gallery: ${entry.color}`);
+    if (!entry.color.trim()) {
+      errors.push("Each color gallery must have a selected palette color.");
+    } else if (paletteIds && !paletteIds.has(entry.color)) {
+      errors.push("One or more selected colors are invalid or inactive.");
     }
     if (!entry.images.length) {
-      errors.push(`Color ${entry.color} must have at least one image.`);
+      errors.push(`Selected color gallery must have at least one image.`);
     }
   });
 
@@ -133,15 +145,17 @@ export function validateProductForm(values: ProductFormValues): ProductValidatio
       errors.push(`Size ${variant.size} must include at least one color.`);
     }
     variant.colors.forEach((colorEntry) => {
-      if (!PRODUCT_COLORS.includes(colorEntry.color)) {
-        errors.push(`Invalid variant color: ${colorEntry.color}`);
+      if (!colorEntry.color.trim()) {
+        errors.push(`Size ${variant.size} has an unselected color.`);
+      } else if (paletteIds && !paletteIds.has(colorEntry.color)) {
+        errors.push(`Size ${variant.size} has an invalid color.`);
       }
       if (colorEntry.quantity < 0) {
-        errors.push(`Quantity for ${variant.size}/${colorEntry.color} must be non-negative.`);
+        errors.push(`Quantity for ${variant.size} must be non-negative.`);
       }
       if (!colorImageSet.has(colorEntry.color)) {
         errors.push(
-          `Variant color ${colorEntry.color} in size ${variant.size} must exist in color galleries.`,
+          `Variant color in size ${variant.size} must exist in color galleries.`,
         );
       }
     });
@@ -243,7 +257,7 @@ export function buildUpdateProductPayload(
 
   const initialColorMap = new Map(initialValues.colorImages.map((item) => [item.color, item.images]));
   const currentColorMap = new Map(currentValues.colorImages.map((item) => [item.color, item.images]));
-  const allColors = new Set<ProductColor>([
+  const allColors = new Set<string>([
     ...Array.from(initialColorMap.keys()),
     ...Array.from(currentColorMap.keys()),
   ]);

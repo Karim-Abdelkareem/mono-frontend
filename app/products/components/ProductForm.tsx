@@ -32,7 +32,10 @@ import {
 } from "@/app/lib/sizeChartService";
 import SizeChartPreview from "@/app/size-charts/components/SizeChartPreview";
 import {
-  PRODUCT_COLORS,
+  getColors,
+  getColorDisplayName,
+} from "@/app/lib/colorService";
+import {
   PRODUCT_SIZES,
   ProductColor,
   ProductEntity,
@@ -44,6 +47,7 @@ import {
 import {
   buildCreateProductPayload,
   buildUpdateProductPayload,
+  createDefaultProductFormValues,
   normalizeFormValuesFromProduct,
   ProductFormValues,
   validateProductForm,
@@ -58,24 +62,6 @@ type UploadItem = {
 
 type MediaUploadItem = UploadItem & {
   mediaType: ProductMediaType;
-};
-
-const colorSwatches: Record<ProductColor, string> = {
-  Red: "#ef4444",
-  Blue: "#3b82f6",
-  Green: "#22c55e",
-  Yellow: "#facc15",
-  Purple: "#a855f7",
-  Orange: "#f97316",
-  Pink: "#ec4899",
-  Brown: "#92400e",
-  Gray: "#6b7280",
-  Black: "#111827",
-  White: "#ffffff",
-  "Baby Blue": "#56a3d9",
-  Baige: "#F5F5DC",
-  Burgundy: "#800020",
-  Petroleum: "#003153",
 };
 
 type ProductFormProps = {
@@ -126,6 +112,8 @@ export default function ProductForm({
       ? normalizeFormValuesFromProduct(initialProduct)
       : null;
 
+  const createDefaults = createDefaultProductFormValues();
+
   const [titleEn, setTitleEn] = useState(editSeed?.title.en ?? "");
   const [titleAr, setTitleAr] = useState(editSeed?.title.ar ?? "");
   const [descriptionEn, setDescriptionEn] = useState(
@@ -144,9 +132,7 @@ export default function ProductForm({
   const [isActive, setIsActive] = useState(editSeed?.isActive ?? true);
   const [sizeChartId, setSizeChartId] = useState(editSeed?.sizeChartId ?? "");
   const [variants, setVariants] = useState<ProductFormValues["variants"]>(
-    editSeed?.variants ?? [
-      { size: "M", colors: [{ color: "Black", quantity: 0 }] },
-    ],
+    editSeed?.variants ?? createDefaults.variants,
   );
   const [colorImages, setColorImages] = useState<
     Array<{ color: ProductColor; images: UploadItem[] }>
@@ -156,7 +142,10 @@ export default function ProductForm({
           color: entry.color,
           images: toUploadItems(entry.images),
         }))
-      : [{ color: "Black", images: [] }],
+      : createDefaults.colorImages.map((entry) => ({
+          color: entry.color,
+          images: [],
+        })),
   );
   const [productMedia, setProductMedia] = useState<MediaUploadItem[]>(
     editSeed?.productImagesAndVideos.length
@@ -184,6 +173,56 @@ export default function ProductForm({
       queryKey: ["size-charts-active"],
       queryFn: fetchActiveSizeCharts,
     });
+
+  const { data: palette = [], isLoading: paletteLoading } = useQuery({
+    queryKey: ["colors"],
+    queryFn: getColors,
+  });
+
+  const activePalette = useMemo(
+    () => palette.filter((color) => color.isActive),
+    [palette],
+  );
+
+  const paletteById = useMemo(
+    () => new Map(palette.map((color) => [color._id, color])),
+    [palette],
+  );
+
+  const paletteIdSet = useMemo(
+    () => new Set(activePalette.map((color) => color._id)),
+    [activePalette],
+  );
+
+  const getColorLabel = (colorId: ProductColor) => {
+    const color = paletteById.get(colorId);
+    return color ? getColorDisplayName(color) : colorId || "Select color";
+  };
+
+  const getColorHex = (colorId: ProductColor) =>
+    paletteById.get(colorId)?.hexCode ?? "#d1d5db";
+
+  useEffect(() => {
+    if (mode !== "create" || !activePalette.length) return;
+    const defaultColorId = activePalette[0]._id;
+    setColorImages((prev) => {
+      if (prev.length === 1 && !prev[0].color) {
+        return [{ ...prev[0], color: defaultColorId }];
+      }
+      return prev;
+    });
+    setVariants((prev) => {
+      if (prev.length === 1 && !prev[0].colors[0]?.color) {
+        return [
+          {
+            ...prev[0],
+            colors: [{ color: defaultColorId, quantity: 0 }],
+          },
+        ];
+      }
+      return prev;
+    });
+  }, [mode, activePalette]);
 
   const sizeChartOptions = useMemo(() => {
     const options = [...activeSizeCharts];
@@ -446,14 +485,14 @@ export default function ProductForm({
   };
 
   const addColorGallery = () => {
-    const nextColor = PRODUCT_COLORS.find(
-      (candidate) => !colorImages.some((entry) => entry.color === candidate),
+    const nextColor = activePalette.find(
+      (candidate) => !colorImages.some((entry) => entry.color === candidate._id),
     );
     if (!nextColor) {
-      toast.error("All colors are already added.");
+      toast.error("All palette colors are already added.");
       return;
     }
-    setColorImages((prev) => [...prev, { color: nextColor, images: [] }]);
+    setColorImages((prev) => [...prev, { color: nextColor._id, images: [] }]);
   };
 
   const updateColorGalleryColor = (
@@ -502,7 +541,7 @@ export default function ProductForm({
       toast.error("All sizes are already added.");
       return;
     }
-    const fallbackColor = colorImages[0]?.color ?? "Black";
+    const fallbackColor = colorImages[0]?.color ?? activePalette[0]?._id ?? "";
     setVariants((prev) => [
       ...prev,
       { size: nextSize, colors: [{ color: fallbackColor, quantity: 0 }] },
@@ -656,7 +695,7 @@ export default function ProductForm({
       return;
     }
 
-    const validation = validateProductForm(currentValues);
+    const validation = validateProductForm(currentValues, paletteIdSet);
     if (!validation.valid) {
       toast.error(validation.errors[0] ?? "Invalid form data.");
       return;
@@ -991,48 +1030,75 @@ export default function ProductForm({
         </section>
 
         <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-5">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
               Color Galleries
             </h2>
-            <button
-              type="button"
-              onClick={addColorGallery}
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs text-gray-700"
-            >
-              <Plus className="size-4" />
-              Add color gallery
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/colors/add-color"
+                className="text-xs text-gray-600 underline hover:text-gray-900"
+              >
+                Manage palette
+              </Link>
+              <button
+                type="button"
+                onClick={addColorGallery}
+                disabled={!activePalette.length}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs text-gray-700 disabled:opacity-50"
+              >
+                <Plus className="size-4" />
+                Add color gallery
+              </button>
+            </div>
           </div>
 
-          {colorImages.map((entry) => (
+          {paletteLoading ? (
+            <p className="text-sm text-gray-500">Loading color palette...</p>
+          ) : !activePalette.length ? (
+            <p className="text-sm text-amber-700">
+              No active colors in the palette.{" "}
+              <Link href="/colors/add-color" className="underline">
+                Add a color
+              </Link>{" "}
+              before creating product galleries.
+            </p>
+          ) : null}
+
+          {colorImages.map((entry, galleryIndex) => (
             <div
-              key={entry.color}
+              key={entry.color || `gallery-${galleryIndex}`}
               className="rounded-lg border border-gray-200 p-3"
             >
               <div className="mb-2 flex items-center gap-2">
+                <span
+                  className="size-6 shrink-0 rounded-full border border-black/10"
+                  style={{ backgroundColor: getColorHex(entry.color) }}
+                />
                 <select
                   value={entry.color}
                   onChange={(event) =>
-                    updateColorGalleryColor(
-                      entry.color,
-                      event.target.value as ProductColor,
-                    )
+                    updateColorGalleryColor(entry.color, event.target.value)
                   }
-                  className="rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
+                  className="min-w-[160px] rounded-lg border border-gray-200 px-2 py-1.5 text-sm"
                 >
-                  {PRODUCT_COLORS.map((color) => (
-                    <option key={color} value={color}>
-                      {color}
+                  {!entry.color && <option value="">Select color</option>}
+                  {activePalette.map((color) => (
+                    <option key={color._id} value={color._id}>
+                      {getColorDisplayName(color)}
                     </option>
                   ))}
+                  {entry.color &&
+                    !activePalette.some((color) => color._id === entry.color) && (
+                      <option value={entry.color}>{getColorLabel(entry.color)}</option>
+                    )}
                 </select>
                 <button
                   type="button"
                   onClick={() =>
                     requestConfirm(
                       "Delete color gallery?",
-                      `This will remove the ${entry.color} gallery and related variant color entries.`,
+                      `This will remove the ${getColorLabel(entry.color)} gallery and related variant color entries.`,
                       () => removeColorGallery(entry.color),
                     )
                   }
@@ -1064,7 +1130,7 @@ export default function ProductForm({
                   >
                     <Image
                       src={image.previewUrl}
-                      alt={entry.color}
+                      alt={getColorLabel(entry.color)}
                       fill
                       className="object-cover"
                       unoptimized
@@ -1079,7 +1145,7 @@ export default function ProductForm({
                       onClick={() =>
                         requestConfirm(
                           "Delete image?",
-                          `This will remove this image from ${entry.color} gallery.`,
+                          `This will remove this image from ${getColorLabel(entry.color)} gallery.`,
                           () => removeColorImage(entry.color, image.id),
                         )
                       }
@@ -1165,7 +1231,7 @@ export default function ProductForm({
                     <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-2 py-1">
                       <span
                         className="size-3 rounded-full border border-black/10"
-                        style={{ backgroundColor: colorSwatches[entry.color] }}
+                        style={{ backgroundColor: getColorHex(entry.color) }}
                       />
                       <select
                         value={entry.color}
@@ -1173,14 +1239,14 @@ export default function ProductForm({
                           updateVariantColor(
                             variant.size,
                             entry.color,
-                            event.target.value as ProductColor,
+                            event.target.value,
                           )
                         }
                         className="border-none bg-transparent text-xs outline-none"
                       >
                         {colorImages.map((gallery) => (
                           <option key={gallery.color} value={gallery.color}>
-                            {gallery.color}
+                            {getColorLabel(gallery.color)}
                           </option>
                         ))}
                       </select>
@@ -1204,7 +1270,7 @@ export default function ProductForm({
                       onClick={() =>
                         requestConfirm(
                           "Delete variant color?",
-                          `This will remove color ${entry.color} from size ${variant.size}.`,
+                          `This will remove color ${getColorLabel(entry.color)} from size ${variant.size}.`,
                           () => removeVariantColor(variant.size, entry.color),
                         )
                       }
